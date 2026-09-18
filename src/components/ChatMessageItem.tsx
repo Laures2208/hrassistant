@@ -5,15 +5,16 @@
 
 import React, { useState } from 'react';
 import Markdown from 'react-markdown';
-import { Scale, User, Copy, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { Scale, User, Copy, Check, AlertCircle, RefreshCw, Key } from 'lucide-react';
 import { ChatMessage } from '../types';
 
 interface ChatMessageItemProps {
   message: ChatMessage;
   onRetry?: () => void;
+  onOpenApiKey?: () => void;
 }
 
-export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, onRetry }) => {
+export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, onRetry, onOpenApiKey }) => {
   const [copied, setCopied] = useState(false);
   const isUser = message.sender === 'user';
 
@@ -94,8 +95,19 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, onRet
               </div>
             </div>
 
-            {onRetry && (
-              <div className="pt-1 flex justify-end">
+            <div className="pt-1 flex items-center justify-end gap-2 flex-wrap">
+              {onOpenApiKey && message.message.includes('API Key') && (
+                <button
+                  type="button"
+                  onClick={onOpenApiKey}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-medium rounded-lg cursor-pointer transition-all shadow-xs"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>⚙️ Cấu hình API Key ngay</span>
+                </button>
+              )}
+
+              {onRetry && (
                 <button
                   type="button"
                   onClick={onRetry}
@@ -104,8 +116,8 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, onRet
                   <RefreshCw className="w-3 h-3" />
                   <span>Thử lại</span>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         ) : (
           <div className="markdown-content text-sm text-slate-800 leading-relaxed">

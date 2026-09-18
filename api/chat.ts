@@ -14,13 +14,13 @@ Bạn là Chuyên gia Pháp lý Lao động và Cố vấn Tuân thủ Nội quy
 
 CÁC QUY TẮC BẮT BUỘC KHI TRẢ LỜI:
 
-1. TRÍCH DẪN CHÍNH XÁC NGUỒN CĂN CỨ PHÁP LÝ:
+1. ĐỌC KỸ TOÀN BỘ NGỮ CẢNH & TRÍCH DẪN ĐẦY ĐỦ CĂN CỨ PHÁP LÝ:
 - Bắt buộc trích dẫn rõ ràng: [Tên File / Tên Văn bản] ➔ [Điều / Khoản / Điểm cụ thể] đã được cung cấp trong tài liệu.
-- Tuyệt đối không viện dẫn chung chung không có căn cứ.
+- Đọc kỹ toàn bộ các tệp tài liệu được đính kèm. Tuyệt đối không viện dẫn chung chung hoặc giả định không có căn cứ.
 
 2. LIỆT KÊ ĐẦY ĐỦ, CHI TIẾT & TUYỆT ĐỐI KHÔNG BỎ SÓT:
-- Khi câu hỏi liên quan đến danh mục quyền lợi, các trường hợp nghỉ phép (nghỉ phép năm, nghỉ việc riêng có lương/không lương, nghỉ ốm đau, thai sản...), các hình thức kỷ luật, mức trợ cấp thôi việc hoặc giờ làm thêm: BẮT BUỘC phải liệt kê ĐẦY ĐỦ TẤT CẢ các trường hợp và điều kiện được ghi trong tài liệu.
-- Tuyệt đối KHÔNG được tóm tắt sơ sài, cắt xén làm mất đi các chi tiết hoặc ngoại lệ quan trọng.
+- Khi câu hỏi liên quan đến danh mục quyền lợi, các trường hợp nghỉ phép (nghỉ phép năm, nghỉ việc riêng có lương/không lương, nghỉ ốm đau, thai sản...), các hình thức kỷ luật, mức trợ cấp thôi việc, phụ cấp hoặc giờ làm thêm (OT/WFH): BẮT BUỘC phải liệt kê ĐẦY ĐỦ TẤT CẢ các trường hợp và điều kiện được ghi trong tài liệu.
+- Tuyệt đối KHÔNG được tóm tắt sơ sài, cắt xén làm mất đi các chi tiết, mốc thời gian hoặc ngoại lệ pháp lý quan trọng.
 
 3. ĐỊNH DẠNG MARKDOWN RÕ RÀNG, CHUYÊN NGHIỆP:
 Mỗi câu trả lời cần được cấu trúc mạch lạc, chuẩn mực theo 3 phần:
@@ -40,9 +40,14 @@ Mỗi câu trả lời cần được cấu trúc mạch lạc, chuẩn mực th
 - Nếu người dùng chưa tải file riêng nào lên, hãy căn cứ vào Bộ luật Lao động 2019 mặc định và nhắc nhở người dùng có thể tải file nội quy riêng của công ty lên bất cứ lúc nào.
 `;
 
+// Danh sách các model chuẩn được Google hỗ trợ, sắp xếp theo thứ tự ưu tiên
 const CANDIDATE_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-flash-latest',
+  'gemini-3.8-flash',
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
 ];
 
 /**
@@ -94,27 +99,32 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // 1. Đọc API Key từ 3 nguồn: Client Header, Client Body, hoặc Server Environment
+    // 1. Đọc API Key theo đúng thứ tự ưu tiên:
+    // Ưu tiên 1: API Key do người dùng nhập lưu trong localStorage (truyền qua Header hoặc Body)
     const headerKey = (req.headers['x-gemini-api-key'] as string) || 
       (typeof req.headers.authorization === 'string' ? req.headers.authorization.replace(/^Bearer\s+/i, '').trim() : '');
     const clientProvidedKey = (headerKey || bodyApiKey || '').trim();
+
+    // Ưu tiên 2: Biến môi trường Vercel hoặc Server (GEMINI_API_KEY hoặc VITE_GEMINI_API_KEY)
     const envApiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
     
-    const activeApiKey = clientProvidedKey || envApiKey;
+    const activeApiKey = (clientProvidedKey && clientProvidedKey.length >= 10)
+      ? clientProvidedKey
+      : (envApiKey && envApiKey !== 'MY_GEMINI_API_KEY' ? envApiKey : clientProvidedKey);
 
     // Trả về mã 400 rõ ràng (thay vì làm sập function với lỗi 500)
     if (!activeApiKey || activeApiKey === 'MY_GEMINI_API_KEY' || activeApiKey.length < 10) {
       res.status(400).json({
         error: 'CHUA_CAU_HINH_API_KEY',
         needsApiKey: true,
-        message: 'Chưa cấu hình Gemini API Key. Bạn có thể bấm nút "⚙️ Cấu hình API Key" trên thanh Header hoặc thiết lập biến môi trường GEMINI_API_KEY trong Project Settings của Vercel.',
+        message: 'Chưa cấu hình Gemini API Key. Vui lòng bấm nút "⚙️ Cấu hình API Key" trên thanh Header để dán mã API Key của bạn từ Google AI Studio (hoặc cài đặt biến môi trường GEMINI_API_KEY trên Vercel).',
       });
       return;
     }
 
     const ai = new GoogleGenAI({ apiKey: activeApiKey });
     const rawKnowledge = dynamicKnowledgeBase || customKnowledgeBase || DEFAULT_KNOWLEDGE_BASE;
-    // Nén khoảng trắng văn bản để tránh vượt quá Vercel payload limit (4.5MB)
+    // Nén khoảng trắng văn bản để tránh vượt quá Vercel payload limit
     const knowledgeDoc = compressDocumentText(rawKnowledge);
     const hasUploadedFiles = uploadedFilesSummary && uploadedFilesSummary.length > 0;
 
@@ -150,6 +160,7 @@ ${knowledgeDoc}
     let reply = '';
     let lastError: any = null;
 
+    // Duyệt qua danh sách các model hợp lệ cho đến khi tìm thấy model phản hồi thành công
     for (const modelName of CANDIDATE_MODELS) {
       try {
         const response = await ai.models.generateContent({
@@ -160,13 +171,13 @@ ${knowledgeDoc}
             temperature: 0.2,
           },
         });
-        if (response.text) {
+        if (response && response.text) {
           reply = response.text;
           break;
         }
       } catch (err: any) {
         lastError = err;
-        console.warn(`Lỗi với model ${modelName} trên Vercel:`, err?.message || err);
+        console.warn(`[Vercel Serverless] Cảnh báo với model ${modelName}:`, err?.message || err);
       }
     }
 
@@ -176,7 +187,7 @@ ${knowledgeDoc}
         res.status(400).json({
           error: 'API_KEY_INVALID',
           needsApiKey: true,
-          message: 'Gemini API Key không hợp lệ hoặc đã bị vô hiệu hóa. Vui lòng bấm "⚙️ Cấu hình API Key" trên thanh Header để cập nhật lại key mới.',
+          message: 'Gemini API Key không hợp lệ hoặc đã hết hạn. Vui lòng bấm "⚙️ Cấu hình API Key" trên thanh Header để cập nhật lại key mới từ Google AI Studio.',
         });
         return;
       }

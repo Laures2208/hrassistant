@@ -91,7 +91,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
           <p className="flex items-start gap-2">
             <ShieldAlert className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
             <span>
-              Nếu Vercel Serverless Function chưa cài đặt biến môi trường <code className="px-1 py-0.5 bg-blue-100/80 text-blue-800 rounded font-mono text-[11px]">GEMINI_API_KEY</code>, bạn có thể dán API Key của mình vào đây để tiếp tục sử dụng bình thường.
+              Ứng dụng ưu tiên sử dụng <strong>API Key bạn lưu trong trình duyệt (localStorage)</strong>. Nếu chưa cấu hình, ứng dụng sẽ tự động dùng biến môi trường trên Vercel (<code className="px-1 py-0.5 bg-blue-100/80 text-blue-800 rounded font-mono text-[11px]">VITE_GEMINI_API_KEY</code> / <code className="px-1 py-0.5 bg-blue-100/80 text-blue-800 rounded font-mono text-[11px]">GEMINI_API_KEY</code>).
             </span>
           </p>
           <div className="pt-1 flex items-center justify-between border-t border-blue-200/60 text-[11px]">

@@ -364,6 +364,7 @@ export default function App() {
               key={msg.id}
               message={msg}
               onRetry={msg.isError ? () => handleRetryMessage(index) : undefined}
+              onOpenApiKey={() => setIsApiKeyModalOpen(true)}
             />
           ))}
 

@@ -11,9 +11,14 @@ import { GoogleGenAI } from '@google/genai';
 import { ChatMessage, LawDocumentFile } from '../types';
 import { DEFAULT_KNOWLEDGE_BASE } from '../config/knowledgeBase';
 
+// Danh sách các model chuẩn được Google hỗ trợ
 const CANDIDATE_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-flash-latest',
+  'gemini-3.8-flash',
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
 ];
 
 const CLIENT_SYSTEM_INSTRUCTION = `
@@ -21,13 +26,13 @@ Bạn là Chuyên gia Pháp lý Lao động và Cố vấn Tuân thủ Nội quy
 
 CÁC QUY TẮC BẮT BUỘC KHI TRẢ LỜI:
 
-1. TRÍCH DẪN CHÍNH XÁC NGUỒN CĂN CỨ PHÁP LÝ:
+1. ĐỌC KỸ TOÀN BỘ NGỮ CẢNH & TRÍCH DẪN ĐẦY ĐỦ CĂN CỨ PHÁP LÝ:
 - Bắt buộc trích dẫn rõ ràng: [Tên File / Tên Văn bản] ➔ [Điều / Khoản / Điểm cụ thể] đã được cung cấp trong tài liệu.
-- Tuyệt đối không viện dẫn chung chung không có căn cứ.
+- Đọc kỹ toàn bộ các tệp tài liệu được đính kèm. Tuyệt đối không viện dẫn chung chung hoặc giả định không có căn cứ.
 
 2. LIỆT KÊ ĐẦY ĐỦ, CHI TIẾT & TUYỆT ĐỐI KHÔNG BỎ SÓT:
-- Khi câu hỏi liên quan đến danh mục quyền lợi, các trường hợp nghỉ phép (nghỉ phép năm, nghỉ việc riêng có lương/không lương, nghỉ ốm đau, thai sản...), các hình thức kỷ luật, mức trợ cấp thôi việc hoặc giờ làm thêm: BẮT BUỘC phải liệt kê ĐẦY ĐỦ TẤT CẢ các trường hợp và điều kiện được ghi trong tài liệu.
-- Tuyệt đối KHÔNG được tóm tắt sơ sài, cắt xén làm mất đi các chi tiết hoặc ngoại lệ quan trọng.
+- Khi câu hỏi liên quan đến danh mục quyền lợi, các trường hợp nghỉ phép (nghỉ phép năm, nghỉ việc riêng có lương/không lương, nghỉ ốm đau, thai sản...), các hình thức kỷ luật, mức trợ cấp thôi việc, phụ cấp hoặc giờ làm thêm (OT/WFH): BẮT BUỘC phải liệt kê ĐẦY ĐỦ TẤT CẢ các trường hợp và điều kiện được ghi trong tài liệu.
+- Tuyệt đối KHÔNG được tóm tắt sơ sài, cắt xén làm mất đi các chi tiết, mốc thời gian hoặc ngoại lệ pháp lý quan trọng.
 
 3. ĐỊNH DẠNG MARKDOWN RÕ RÀNG, CHUYÊN NGHIỆP:
 Mỗi câu trả lời cần được cấu trúc mạch lạc, chuẩn mực theo 3 phần:
@@ -135,7 +140,7 @@ export async function sendLegalChatMessage({
     // Nếu server trả về lỗi thiếu API Key (mã 400)
     if (response.status === 400 && (errorData?.needsApiKey || errorData?.error === 'CHUA_CAU_HINH_API_KEY')) {
       const customErr: any = new Error(
-        errorData?.message || 'Chưa cấu hình Gemini API Key trên Vercel. Vui lòng bấm nút "⚙️ Cấu hình API Key" trên Header để nhập key của bạn.'
+        errorData?.message || 'Chưa cấu hình Gemini API Key. Vui lòng bấm nút "⚙️ Cấu hình API Key" trên thanh Header để nhập mã API Key của bạn từ Google AI Studio.'
       );
       customErr.needsApiKey = true;
       throw customErr;
@@ -163,12 +168,15 @@ export async function sendLegalChatMessage({
     console.warn('Backend /api/chat không khả dụng hoặc bị lỗi, chuyển sang kiểm tra Client SDK:', apiError);
   }
 
-  // BƯỚC 2: Fallback trực tiếp qua Client-side SDK (khi host static trên Vercel)
+  // BƯỚC 2: Fallback trực tiếp qua Client-side SDK (khi deploy tĩnh trên Vercel)
+  // Thứ tự ưu tiên:
+  // 1. Key người dùng nhập lưu trong localStorage
+  // 2. Biến môi trường Vercel import.meta.env.VITE_GEMINI_API_KEY
   const clientApiKey = (userApiKey || (import.meta.env.VITE_GEMINI_API_KEY as string) || '').trim();
 
-  if (!clientApiKey || clientApiKey === 'MY_GEMINI_API_KEY') {
+  if (!clientApiKey || clientApiKey === 'MY_GEMINI_API_KEY' || clientApiKey.length < 10) {
     const keyError: any = new Error(
-      'Chưa cấu hình API Key. Vui lòng bấm nút **"⚙️ Cấu hình API Key"** trên thanh Header để nhập Gemini API Key của bạn, hoặc cấu hình biến môi trường `VITE_GEMINI_API_KEY`.'
+      'Chưa cấu hình Gemini API Key. Vui lòng bấm nút "⚙️ Cấu hình API Key" trên thanh Header để dán mã API Key của bạn từ Google AI Studio (hoặc cài đặt biến môi trường VITE_GEMINI_API_KEY trong Project Settings của Vercel).'
     );
     keyError.needsApiKey = true;
     throw keyError;
@@ -217,6 +225,7 @@ ${knowledgeDoc}
     let reply = '';
     let lastError: any = null;
 
+    // Duyệt qua danh sách CANDIDATE_MODELS cho đến khi tìm thấy model phản hồi thành công
     for (const modelName of CANDIDATE_MODELS) {
       try {
         const response = await clientAi.models.generateContent({
@@ -228,13 +237,13 @@ ${knowledgeDoc}
           },
         });
 
-        if (response.text) {
+        if (response && response.text) {
           reply = response.text;
           break;
         }
       } catch (err: any) {
         lastError = err;
-        console.warn(`Lỗi khi gọi model ${modelName} từ client:`, err);
+        console.warn(`[Client SDK] Cảnh báo với model ${modelName}:`, err?.message || err);
       }
     }
 
