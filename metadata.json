@@ -1,0 +1,6 @@
+{
+  "name": "Trợ Lý Luật Lao Động",
+  "description": "Trợ lý tự động tư vấn Luật Lao động Việt Nam và Nội quy lao động công ty tích hợp Google Gemini AI",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
