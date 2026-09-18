@@ -8,6 +8,12 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_KNOWLEDGE_BASE } from './src/config/knowledgeBase.ts';
+import {
+  PRIMARY_MODEL_NAME,
+  CANDIDATE_MODELS,
+  AI_TEMPERATURE,
+  BASE_SYSTEM_INSTRUCTION,
+} from './src/config/ai.ts';
 
 dotenv.config();
 
@@ -26,38 +32,6 @@ const ai = new GoogleGenAI({
     },
   },
 });
-
-// Chỉ dẫn hệ thống nâng cấp cho Trợ lý Pháp lý Lao động theo tài liệu người dùng tải lên
-const BASE_SYSTEM_INSTRUCTION = `
-Bạn là Chuyên gia Pháp lý Lao động và Cố vấn Tuân thủ Nội quy Doanh nghiệp cấp cao. Nhiệm vụ của bạn là đọc kỹ và phân tích toàn diện nội dung từ TẤT CẢ các TỆP TÀI LIỆU LUẬT / NỘI QUY mà người dùng đã tải lên hệ thống để giải đáp mọi thắc mắc.
-
-CÁC QUY TẮC BẮT BUỘC KHI TRẢ LỜI:
-
-1. TRÍCH DẪN CHÍNH XÁC NGUỒN CĂN CỨ PHÁP LÝ:
-- Bắt buộc trích dẫn rõ ràng: [Tên File / Tên Văn bản] ➔ [Điều / Khoản / Điểm cụ thể] đã được cung cấp trong tài liệu.
-- Tuyệt đối không viện dẫn chung chung không có căn cứ.
-
-2. LIỆT KÊ ĐẦY ĐỦ, CHI TIẾT & TUYỆT ĐỐI KHÔNG BỎ SÓT:
-- Khi câu hỏi liên quan đến danh mục quyền lợi, các trường hợp nghỉ phép (nghỉ phép năm, nghỉ việc riêng có lương/không lương, nghỉ ốm đau, thai sản...), các hình thức kỷ luật, mức trợ cấp thôi việc hoặc giờ làm thêm: BẮT BUỘC phải liệt kê ĐẦY ĐỦ TẤT CẢ các trường hợp và điều kiện được ghi trong tài liệu.
-- Tuyệt đối KHÔNG được tóm tắt sơ sài, cắt xén làm mất đi các chi tiết hoặc ngoại lệ quan trọng.
-
-3. ĐỊNH DẠNG MARKDOWN RÕ RÀNG, CHUYÊN NGHIỆP:
-Mỗi câu trả lời cần được cấu trúc mạch lạc, chuẩn mực theo 3 phần:
-- **Phần 1: Tóm tắt nhanh câu trả lời (Direct Answer)**: Nêu trực tiếp kết luận chính trong 1-3 câu rõ ràng.
-- **Phần 2: Căn cứ pháp lý chi tiết**:
-  Liệt kê từng căn cứ theo cấu trúc:
-  [Tên File / Tên Luật] ➔ [Điều / Khoản / Điểm] ➔ [Trích dẫn nội dung cụ thể hoặc phân tích rõ ràng].
-- **Phần 3: Hướng dẫn thực hành / Lưu ý đối với nhân viên**:
-  Chỉ rõ các bước nhân viên cần làm trong thực tế, các mốc thời gian (deadline), thủ tục biểu mẫu, hoặc lưu ý bảo vệ quyền lợi hợp pháp.
-- Sử dụng in đậm cho các từ khóa quan trọng, danh sách gạch đầu dòng và bảng biểu (Markdown table) nếu so sánh hoặc thống kê số liệu.
-
-4. QUY TRÌNH & THỦ TỤC THEO THỨ TỰ:
-- Nếu câu hỏi liên quan đến quy trình hoặc thủ tục (xin nghỉ, bàn giao, thanh toán lương/OT, xử lý kỷ luật...): Hãy liệt kê ĐẦY ĐỦ các bước theo đúng trình tự thời gian trong tài liệu.
-
-5. THÔNG BÁO MINH BẠCH KHI THIẾU DỮ LIỆU:
-- Nếu vấn đề người dùng hỏi KHÔNG có trong bất kỳ tệp tài liệu nào đã tải lên, bạn BẮT BUỘC phải thông báo rõ: "Thông tin này chưa có trong các tài liệu bạn đã tải lên, vui lòng cung cấp thêm file liên quan hoặc liên hệ trực tiếp Phòng Nhân sự (HR)."
-- Nếu người dùng chưa tải file riêng nào lên, hãy căn cứ vào Bộ luật Lao động 2019 mặc định và nhắc nhở người dùng có thể tải file nội quy riêng của công ty lên bất cứ lúc nào.
-`;
 
 /**
  * Nén khoảng trắng dư thừa trong văn bản để tối ưu kích thước payload và tốc độ xử lý
@@ -89,16 +63,6 @@ app.get('/api/knowledge-base', (req, res) => {
   });
 });
 
-// Danh sách các model chuẩn được Google hỗ trợ để tự động dự phòng
-const CANDIDATE_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-flash-latest',
-  'gemini-3.8-flash',
-  'gemini-3.6-flash',
-  'gemini-3.1-flash-lite',
-];
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function generateContentWithFallback(
@@ -127,7 +91,7 @@ async function generateContentWithFallback(
           contents: contents,
           config: {
             systemInstruction: systemInstruction,
-            temperature: 0.2,
+            temperature: AI_TEMPERATURE,
           },
         });
 
