@@ -33,30 +33,45 @@ Bạn là Chuyên gia Pháp lý Lao động và Cố vấn Tuân thủ Nội quy
 
 CÁC QUY TẮC BẮT BUỘC KHI TRẢ LỜI:
 
-1. NHIỆM VỤ CHÍNH:
-- Đọc toàn bộ tài liệu luật/nội quy được cung cấp và tìm TẤT CẢ các Điều, Khoản, Điểm có liên quan trực tiếp hoặc gián tiếp đến câu hỏi của người dùng.
+1. TRÍCH DẪN CHÍNH XÁC NGUỒN CĂN CỨ PHÁP LÝ:
+- Bắt buộc trích dẫn rõ ràng: [Tên File / Tên Văn bản] ➔ [Điều / Khoản / Điểm cụ thể] đã được cung cấp trong tài liệu.
+- Tuyệt đối không viện dẫn chung chung không có căn cứ.
 
-2. YÊU CẦU ĐẦY ĐỦ & KHÔNG BỎ SÓT:
-- Tuyệt đối KHÔNG trả lời chung chung hoặc tóm tắt quá ngắn gọn làm mất ý.
-- Khi có nhiều điều luật liên quan (ví dụ: vừa có Bộ luật Lao động, vừa có Nội quy công ty; hoặc liên quan đến nhiều điều như Điều 12, Điều 13, Điều 105...), BẮT BUỘC phải liệt kê đầy đủ danh sách từng Điều / Khoản có liên quan, không được bỏ sót bất kỳ điều khoản nào.
+2. LIỆT KÊ ĐẦY ĐỦ, CHI TIẾT & TUYỆT ĐỐI KHÔNG BỎ SÓT:
+- Khi câu hỏi liên quan đến danh mục quyền lợi, các trường hợp nghỉ phép (nghỉ phép năm, nghỉ việc riêng có lương/không lương, nghỉ ốm đau, thai sản...), các hình thức kỷ luật, mức trợ cấp thôi việc hoặc giờ làm thêm: BẮT BUỘC phải liệt kê ĐẦY ĐỦ TẤT CẢ các trường hợp và điều kiện được ghi trong tài liệu.
+- Tuyệt đối KHÔNG được tóm tắt sơ sài, cắt xén làm mất đi các chi tiết hoặc ngoại lệ quan trọng.
 
-3. ĐỊNH DẠNG CÂU TRẢ LỜI RÕ RÀNG (BẮT BUỘC THEO 3 PHẦN):
-Mỗi câu trả lời cần được cấu trúc theo 3 phần chuẩn mực:
-- **Phần 1: Tóm tắt nhanh câu trả lời (Direct Answer)**:
-  Nêu câu trả lời trực tiếp, rõ ràng cho câu hỏi của nhân viên ngay ở phần đầu (ngắn gọn trong 1-3 câu).
+3. ĐỊNH DẠNG MARKDOWN RÕ RÀNG, CHUYÊN NGHIỆP:
+Mỗi câu trả lời cần được cấu trúc mạch lạc, chuẩn mực theo 3 phần:
+- **Phần 1: Tóm tắt nhanh câu trả lời (Direct Answer)**: Nêu trực tiếp kết luận chính trong 1-3 câu rõ ràng.
 - **Phần 2: Căn cứ pháp lý chi tiết**:
-  Liệt kê chi tiết từng căn cứ theo cấu trúc:
+  Liệt kê từng căn cứ theo cấu trúc:
   [Tên File / Tên Luật] ➔ [Điều / Khoản / Điểm] ➔ [Trích dẫn nội dung cụ thể hoặc phân tích rõ ràng].
 - **Phần 3: Hướng dẫn thực hành / Lưu ý đối với nhân viên**:
   Chỉ rõ các bước nhân viên cần làm trong thực tế, các mốc thời gian (deadline), thủ tục biểu mẫu, hoặc lưu ý bảo vệ quyền lợi hợp pháp.
+- Sử dụng in đậm cho các từ khóa quan trọng, danh sách gạch đầu dòng và bảng biểu (Markdown table) nếu so sánh hoặc thống kê số liệu.
 
-4. QUY TRÌNH & THỦ TỤC:
-- Nếu câu hỏi liên quan đến quy trình hoặc thủ tục (ví dụ: quy trình xin nghỉ phép, chế độ thai sản, thủ tục thôi việc, xử lý kỷ luật sa thải, đăng ký OT/WFH...): Hãy liệt kê ĐẦY ĐỦ các bước theo đúng thứ tự được quy định trong tài liệu.
+4. QUY TRÌNH & THỦ TỤC THEO THỨ TỰ:
+- Nếu câu hỏi liên quan đến quy trình hoặc thủ tục (xin nghỉ, bàn giao, thanh toán lương/OT, xử lý kỷ luật...): Hãy liệt kê ĐẦY ĐỦ các bước theo đúng trình tự thời gian trong tài liệu.
 
-5. TRƯỜNG HỢP NGOẠI LỆ / THIẾU THÔNG TIN:
+5. THÔNG BÁO MINH BẠCH KHI THIẾU DỮ LIỆU:
 - Nếu vấn đề người dùng hỏi KHÔNG có trong bất kỳ tệp tài liệu nào đã tải lên, bạn BẮT BUỘC phải thông báo rõ: "Thông tin này chưa có trong các tài liệu bạn đã tải lên, vui lòng cung cấp thêm file liên quan hoặc liên hệ trực tiếp Phòng Nhân sự (HR)."
 - Nếu người dùng chưa tải file riêng nào lên, hãy căn cứ vào Bộ luật Lao động 2019 mặc định và nhắc nhở người dùng có thể tải file nội quy riêng của công ty lên bất cứ lúc nào.
 `;
+
+/**
+ * Nén khoảng trắng dư thừa trong văn bản để tối ưu kích thước payload và tốc độ xử lý
+ */
+function compressDocumentText(text: string, maxChars: number = 1000000): string {
+  if (!text) return '';
+  let cleaned = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+  cleaned = cleaned.replace(/[ \t]{2,}/g, ' ');
+  if (cleaned.length > maxChars) {
+    cleaned = cleaned.substring(0, maxChars) + '\n\n[... Đã tối ưu hóa độ dài tài liệu để bảo đảm phản hồi tức thì ...]';
+  }
+  return cleaned.trim();
+}
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -84,7 +99,20 @@ const CANDIDATE_MODELS = [
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function generateContentWithFallback(contents: Array<{ role: string; parts: Array<{ text: string }> }>, systemInstruction: string) {
+async function generateContentWithFallback(
+  contents: Array<{ role: string; parts: Array<{ text: string }> }>,
+  systemInstruction: string,
+  apiKey: string
+) {
+  const client = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+
   let lastError: any = null;
 
   for (const modelName of CANDIDATE_MODELS) {
@@ -92,12 +120,12 @@ async function generateContentWithFallback(contents: Array<{ role: string; parts
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         console.log(`[Gemini API] Đang gọi model: ${modelName} (lần thử ${attempt})...`);
-        const response = await ai.models.generateContent({
+        const response = await client.models.generateContent({
           model: modelName,
           contents: contents,
           config: {
             systemInstruction: systemInstruction,
-            temperature: 0.3,
+            temperature: 0.2,
           },
         });
 
@@ -140,7 +168,8 @@ app.post('/api/chat', async (req, res) => {
       history = [], 
       dynamicKnowledgeBase, 
       uploadedFilesSummary = [], 
-      customKnowledgeBase 
+      customKnowledgeBase,
+      apiKey: bodyApiKey
     } = req.body;
 
     if (!message || typeof message !== 'string') {
@@ -148,14 +177,27 @@ app.post('/api/chat', async (req, res) => {
       return;
     }
 
-    if (!geminiApiKey || geminiApiKey === 'MY_GEMINI_API_KEY') {
-      res.status(503).json({
-        error: 'Chưa cấu hình GEMINI_API_KEY. Vui lòng thiết lập khóa API trong cài đặt của Google AI Studio.',
+    // 1. Đọc API Key từ 3 nguồn: Client Header, Client Body, hoặc Server Environment
+    const headerKey = (req.headers['x-gemini-api-key'] as string) || 
+      (typeof req.headers.authorization === 'string' ? req.headers.authorization.replace(/^Bearer\s+/i, '').trim() : '');
+    const clientProvidedKey = (headerKey || bodyApiKey || '').trim();
+    const envApiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
+    
+    const activeApiKey = clientProvidedKey || envApiKey;
+
+    // Trả về mã 400 rõ ràng kèm cờ needsApiKey: true khi chưa có API Key
+    if (!activeApiKey || activeApiKey === 'MY_GEMINI_API_KEY' || activeApiKey.length < 10) {
+      res.status(400).json({
+        error: 'CHUA_CAU_HINH_API_KEY',
+        needsApiKey: true,
+        message: 'Chưa cấu hình Gemini API Key. Bạn có thể bấm nút "⚙️ Cấu hình API Key" trên thanh Header hoặc thiết lập biến môi trường GEMINI_API_KEY.',
       });
       return;
     }
 
-    const knowledgeDoc = dynamicKnowledgeBase || customKnowledgeBase || DEFAULT_KNOWLEDGE_BASE;
+    const rawKnowledge = dynamicKnowledgeBase || customKnowledgeBase || DEFAULT_KNOWLEDGE_BASE;
+    // Nén khoảng trắng để bảo đảm payload gọn nhẹ và tăng tốc độ xử lý
+    const knowledgeDoc = compressDocumentText(rawKnowledge);
     const hasUploadedFiles = uploadedFilesSummary && uploadedFilesSummary.length > 0;
 
     let filesSummaryHeader = '';
@@ -197,7 +239,7 @@ HƯỚNG DẪN QUAN TRỌNG KHI ĐỐI CHIẾU:
     // Thêm tin nhắn hiện tại của người dùng
     contents.push({ role: 'user', parts: [{ text: message }] });
 
-    const reply = await generateContentWithFallback(contents, systemInstruction);
+    const reply = await generateContentWithFallback(contents, systemInstruction, activeApiKey);
 
     res.json({
       reply: reply || 'Xin lỗi, tôi chưa thể tìm thấy quy định phù hợp cho câu hỏi này. Bạn vui lòng liên hệ trực tiếp Phòng Nhân sự (HR) để được hỗ trợ.',

@@ -14,6 +14,7 @@ import { ChatInput } from './components/ChatInput';
 import { TopicSuggestions } from './components/TopicSuggestions';
 import { FileManagerModal } from './components/FileManagerModal';
 import { FirebaseModal } from './components/FirebaseModal';
+import { ApiKeyModal } from './components/ApiKeyModal';
 import { ChatMessage, LawDocumentFile } from './types';
 import { DEFAULT_KNOWLEDGE_BASE } from './config/knowledgeBase';
 import { INITIAL_SAMPLE_FILES } from './data/sampleLawFiles';
@@ -29,6 +30,7 @@ import { sendLegalChatMessage } from './services/geminiService';
 
 const LOCAL_STORAGE_FILES_KEY = 'labor_law_uploaded_documents_v2';
 const LOCAL_STORAGE_SESSION_KEY = 'labor_law_current_session_id';
+const LOCAL_STORAGE_USER_API_KEY = 'labor_law_user_gemini_api_key';
 
 export default function App() {
   // Quản lý mã phiên hội thoại (Session ID)
@@ -38,6 +40,15 @@ export default function App() {
     const newId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, newId);
     return newId;
+  });
+
+  // Quản lý Gemini API Key do người dùng tự nhập (Dành cho Vercel / Independent Deploy)
+  const [userApiKey, setUserApiKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem(LOCAL_STORAGE_USER_API_KEY) || '';
+    } catch {
+      return '';
+    }
   });
 
   // Danh sách tin nhắn trong phiên chat hiện tại
@@ -64,7 +75,31 @@ export default function App() {
   // Trạng thái modal
   const [isFileManagerOpen, setIsFileManagerOpen] = useState(false);
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
+
+  const handleSaveUserApiKey = (newKey: string) => {
+    const trimmed = newKey.trim();
+    setUserApiKey(trimmed);
+    try {
+      if (trimmed) {
+        localStorage.setItem(LOCAL_STORAGE_USER_API_KEY, trimmed);
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_USER_API_KEY);
+      }
+    } catch (e) {
+      console.error('Lỗi khi lưu user API key:', e);
+    }
+  };
+
+  const handleClearUserApiKey = () => {
+    setUserApiKey('');
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_USER_API_KEY);
+    } catch (e) {
+      console.error('Lỗi khi xóa user API key:', e);
+    }
+  };
 
   // Trạng thái kết nối Firebase
   const [isFirebaseActive, setIsFirebaseActive] = useState(() => {
@@ -214,6 +249,7 @@ export default function App() {
         dynamicKnowledgeBase: dynamicGroundingContext,
         uploadedFiles,
         sessionId,
+        userApiKey: userApiKey.trim() || undefined,
       });
 
       // 3. Thêm tin nhắn phản hồi từ AI
@@ -231,12 +267,13 @@ export default function App() {
       console.error('Lỗi khi trò chuyện với Trợ lý AI:', error);
 
       let cleanErrorText = error?.message || 'Đã có lỗi xảy ra.';
-      if (cleanErrorText.includes('503') || cleanErrorText.includes('high demand') || cleanErrorText.includes('UNAVAILABLE')) {
+      if (error?.needsApiKey || cleanErrorText.includes('API_KEY') || cleanErrorText.includes('Chưa cấu hình API Key')) {
+        // Tự động mở Modal cấu hình API Key để hỗ trợ người dùng thuận tiện nhất
+        setIsApiKeyModalOpen(true);
+      } else if (cleanErrorText.includes('503') || cleanErrorText.includes('high demand') || cleanErrorText.includes('UNAVAILABLE')) {
         cleanErrorText = 'Máy chủ AI hiện đang trong thời điểm quá tải yêu cầu tạm thời (High demand 503). Hệ thống đã tự động thử lại nhưng chưa thành công. Bạn vui lòng bấm nút "Thử lại" bên dưới sau vài giây.';
       } else if (cleanErrorText.includes('429')) {
         cleanErrorText = 'Hệ thống đã đạt giới hạn tần suất yêu cầu tạm thời. Vui lòng đợi khoảng 30 giây rồi bấm "Thử lại".';
-      } else if (cleanErrorText.includes('API_KEY') || cleanErrorText.includes('Chưa cấu hình API Key')) {
-        cleanErrorText = cleanErrorText;
       }
 
       const errorMsg: ChatMessage = {
@@ -274,12 +311,14 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-full bg-slate-100 overflow-hidden">
-      {/* Header Thanh công cụ với Nút Quản lý File */}
+      {/* Header Thanh công cụ với Nút Quản lý File & API Key */}
       <Header
         onNewChat={() => setIsConfirmClearOpen(true)}
         onOpenFileManager={() => setIsFileManagerOpen(true)}
         onOpenFirebase={() => setIsFirebaseModalOpen(true)}
+        onOpenApiKey={() => setIsApiKeyModalOpen(true)}
         isFirebaseActive={isFirebaseActive}
+        hasCustomApiKey={Boolean(userApiKey)}
         messageCount={messages.length}
         fileCount={readyFilesCount}
       />
@@ -367,6 +406,15 @@ export default function App() {
         isOpen={isFirebaseModalOpen}
         onClose={() => setIsFirebaseModalOpen(false)}
         onConfigSaved={handleFirebaseConfigSaved}
+      />
+
+      {/* Modal Cấu hình Gemini API Key tùy chỉnh */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+        savedApiKey={userApiKey}
+        onSaveApiKey={handleSaveUserApiKey}
+        onClearApiKey={handleClearUserApiKey}
       />
 
       {/* Modal Xác nhận Tạo hội thoại mới / Xóa lịch sử */}

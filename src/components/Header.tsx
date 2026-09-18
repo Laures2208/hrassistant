@@ -4,13 +4,15 @@
  */
 
 import React from 'react';
-import { Scale, RotateCcw, FolderOpen, Database, ShieldCheck } from 'lucide-react';
+import { Scale, RotateCcw, FolderOpen, Database, ShieldCheck, Key } from 'lucide-react';
 
 interface HeaderProps {
   onNewChat: () => void;
   onOpenFileManager: () => void;
   onOpenFirebase: () => void;
+  onOpenApiKey: () => void;
   isFirebaseActive: boolean;
+  hasCustomApiKey: boolean;
   messageCount: number;
   fileCount: number;
 }
@@ -19,7 +21,9 @@ export const Header: React.FC<HeaderProps> = ({
   onNewChat,
   onOpenFileManager,
   onOpenFirebase,
+  onOpenApiKey,
   isFirebaseActive,
+  hasCustomApiKey,
   messageCount,
   fileCount,
 }) => {
@@ -93,6 +97,25 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">
               {isFirebaseActive ? 'Firestore' : 'Bộ nhớ'}
             </span>
+          </button>
+
+          {/* Nút Cấu hình Gemini API Key */}
+          <button
+            id="open-api-key-config-button"
+            type="button"
+            onClick={onOpenApiKey}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer border ${
+              hasCustomApiKey
+                ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+            }`}
+            title="Cấu hình Gemini API Key tùy chỉnh cho Vercel hoặc môi trường độc lập"
+          >
+            <Key className={`w-3.5 h-3.5 ${hasCustomApiKey ? 'text-amber-600' : 'text-slate-500'}`} />
+            <span className="hidden sm:inline">
+              {hasCustomApiKey ? 'API Key: Đã lưu' : 'Cấu hình API Key'}
+            </span>
+            <span className="sm:hidden">Key</span>
           </button>
 
           {/* Nút Tạo hội thoại mới / Xóa lịch sử chat */}
