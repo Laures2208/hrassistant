@@ -3,16 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  * 
  * =========================================================================
- * CẤU HÌNH FIREBASE FIRESTORE (LƯU TRỮ LỊCH SỬ CHAT)
- * =========================================================================
- * Bạn có thể điền trực tiếp thông tin Firebase của dự án vào bên dưới,
- * hoặc cấu hình qua các biến môi trường VITE_FIREBASE_* trong file .env.
- * 
- * Hướng dẫn lấy cấu hình Firebase:
- * 1. Truy cập: https://console.firebase.google.com
- * 2. Tạo dự án mới hoặc chọn dự án hiện có.
- * 3. Thêm Web App (biểu tượng </>) và copy firebaseConfig vào đây.
- * 4. Vào Cloud Firestore > Create Database (ở chế độ Test mode hoặc Production).
+ * CẤU HÌNH FIREBASE FIRESTORE (LƯU TRỮ VÀ ĐỒNG BỘ TÀI LIỆU & LỊCH SỬ CHAT)
  * =========================================================================
  */
 
@@ -32,18 +23,19 @@ import {
 import { ChatMessage, FirebaseConfigType } from '../types';
 
 /**
- * CẤU HÌNH MẪU CỦA BẠN - ĐIỀN CÁC THÔNG SỐ THẬT VÀO ĐÂY:
+ * CẤU HÌNH FIREBASE ĐƯỢC CẤP PHÁT CHO DỰ ÁN
  */
 export const DEFAULT_FIREBASE_CONFIG: FirebaseConfigType = {
-  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || "AIzaSyYOUR_SAMPLE_API_KEY_HERE",
-  authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || "your-company-labor-assistant.firebaseapp.com",
-  projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || "your-company-labor-assistant",
-  storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string) || "your-company-labor-assistant.appspot.com",
-  messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || "123456789012",
-  appId: (import.meta.env.VITE_FIREBASE_APP_ID as string) || "1:123456789012:web:abcdef1234567890"
+  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || "AIzaSyCciWWvtEJ1lMCn-c7y7LoEouMoH7UVYLQ",
+  authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || "celtic-mystery-89pl1.firebaseapp.com",
+  projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || "celtic-mystery-89pl1",
+  storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string) || "celtic-mystery-89pl1.firebasestorage.app",
+  messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || "465768180437",
+  appId: (import.meta.env.VITE_FIREBASE_APP_ID as string) || "1:465768180437:web:4f94f6915f2d1415f1905c",
+  firestoreDatabaseId: (import.meta.env.VITE_FIREBASE_DATABASE_ID as string) || "ai-studio-trllutlaong-017f8753-3417-482c-b7ca-d48715c17cff",
 };
 
-const LOCAL_STORAGE_FIREBASE_KEY = 'labor_law_firebase_custom_config';
+const LOCAL_STORAGE_FIREBASE_KEY = 'labor_law_firebase_custom_config_v2';
 const LOCAL_STORAGE_CHAT_KEY = 'labor_law_chat_history_backup_';
 
 // Kiểm tra xem cấu hình có phải là key thực hay là placeholder mẫu
@@ -61,7 +53,10 @@ export function getActiveFirebaseConfig(): FirebaseConfigType {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_FIREBASE_KEY);
     if (saved) {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.apiKey && parsed.projectId) {
+        return parsed;
+      }
     }
   } catch {
     // Ignore error
@@ -73,6 +68,9 @@ export function getActiveFirebaseConfig(): FirebaseConfigType {
 export function saveActiveFirebaseConfig(config: FirebaseConfigType) {
   try {
     localStorage.setItem(LOCAL_STORAGE_FIREBASE_KEY, JSON.stringify(config));
+    // Reset cached instance
+    firestoreDb = null;
+    firebaseApp = null;
   } catch (err) {
     console.error("Không thể lưu cấu hình Firebase vào LocalStorage:", err);
   }
@@ -92,7 +90,13 @@ export function getFirestoreInstance(): Firestore | null {
   try {
     const apps = getApps();
     firebaseApp = apps.length > 0 ? apps[0] : initializeApp(config);
-    firestoreDb = getFirestore(firebaseApp);
+    
+    // Nếu có firestoreDatabaseId tùy chỉnh, sử dụng databaseId đó
+    if (config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)') {
+      firestoreDb = getFirestore(firebaseApp, config.firestoreDatabaseId);
+    } else {
+      firestoreDb = getFirestore(firebaseApp);
+    }
     return firestoreDb;
   } catch (error) {
     console.warn("Khởi tạo Firebase thất bại (sử dụng chế độ lưu cục bộ):", error);

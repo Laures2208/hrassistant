@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  * 
  * TRỢ LÝ TỰ ĐỘNG TƯ VẤN LUẬT LAO ĐỘNG CÔNG TY
- * Ứng dụng tin nhắn AI tích hợp Google Gemini, Dynamic File Grounding (.pdf, .docx, .txt, .md) & Firebase Firestore
+ * Ứng dụng tin nhắn AI tích hợp Google Gemini, Dynamic Cloud Grounding (.pdf, .docx, .txt, .md) & Firebase Firestore
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -15,6 +15,7 @@ import { TopicSuggestions } from './components/TopicSuggestions';
 import { FileManagerModal } from './components/FileManagerModal';
 import { FirebaseModal } from './components/FirebaseModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
+import { AdminAuthModal } from './components/AdminAuthModal';
 import { ChatMessage, LawDocumentFile } from './types';
 import { DEFAULT_KNOWLEDGE_BASE } from './config/knowledgeBase';
 import { INITIAL_SAMPLE_FILES } from './data/sampleLawFiles';
@@ -25,10 +26,18 @@ import {
   getActiveFirebaseConfig, 
   isRealFirebaseConfig 
 } from './config/firebaseConfig';
-import { AlertTriangle, FolderOpen, FileText, Sparkles, Upload } from 'lucide-react';
+import { 
+  subscribeToFirestoreDocuments, 
+  saveBatchDocumentsToFirestore, 
+  deleteDocumentFromFirestore, 
+  clearAllDocumentsFromFirestore, 
+  seedSampleDocumentsToFirestore,
+  getCachedDocuments
+} from './services/firebaseDocumentService';
+import { getAdminSession, setAdminSession } from './config/adminConfig';
+import { AlertTriangle, FolderOpen, FileText, Sparkles, Upload, Cloud, Lock } from 'lucide-react';
 import { sendLegalChatMessage } from './services/geminiService';
 
-const LOCAL_STORAGE_FILES_KEY = 'labor_law_uploaded_documents_v2';
 const LOCAL_STORAGE_SESSION_KEY = 'labor_law_current_session_id';
 const LOCAL_STORAGE_USER_API_KEY = 'labor_law_user_gemini_api_key';
 
@@ -40,6 +49,11 @@ export default function App() {
     const newId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, newId);
     return newId;
+  });
+
+  // Quản lý trạng thái Quản trị viên (Admin Login)
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
+    return getAdminSession();
   });
 
   // Quản lý Gemini API Key do người dùng tự nhập (Dành cho Vercel / Independent Deploy)
@@ -56,28 +70,94 @@ export default function App() {
   const [input, setInput] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Quản lý danh sách file tài liệu đã tải lên (.pdf, .docx, .txt, .md)
+  // Quản lý danh sách file tài liệu đã tải lên (.pdf, .docx, .txt, .md) - Đồng bộ Cloud Firestore
   const [uploadedFiles, setUploadedFiles] = useState<LawDocumentFile[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_FILES_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.error('Lỗi khi đọc danh sách file từ localStorage:', e);
-    }
-    return INITIAL_SAMPLE_FILES;
+    const cached = getCachedDocuments();
+    return cached.length > 0 ? cached : INITIAL_SAMPLE_FILES;
   });
+
+  // Trạng thái đồng bộ Cloud Firestore
+  const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
 
   // Trạng thái modal
   const [isFileManagerOpen, setIsFileManagerOpen] = useState(false);
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
+  const [pendingAdminAction, setPendingAdminAction] = useState<{
+    type: 'file_manager' | 'firebase_modal' | 'api_key_modal';
+    title: string;
+  } | null>(null);
 
+  // Trạng thái kết nối Firebase
+  const [isFirebaseActive, setIsFirebaseActive] = useState(() => {
+    return isRealFirebaseConfig(getActiveFirebaseConfig());
+  });
+
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // =========================================================================
+  // 1. ĐỒNG BỘ DỮ LIỆU TÀI LIỆU TOÀN HỆ THỐNG VỚI CLOUD FIRESTORE
+  // =========================================================================
+  useEffect(() => {
+    console.log('[App] Khởi tạo lắng nghe đồng bộ tài liệu từ Firestore...');
+    const unsubscribe = subscribeToFirestoreDocuments((docs, fromFirestore) => {
+      if (docs.length > 0) {
+        setUploadedFiles(docs);
+      } else if (fromFirestore) {
+        // Nếu trên Cloud hoàn toàn trống, tự động nạp tài liệu mẫu ban đầu
+        console.log('[App] Cloud Firestore chưa có tài liệu, tiến hành nạp tài liệu mẫu...');
+        seedSampleDocumentsToFirestore().catch((err) => {
+          console.warn('[App] Không thể nạp sample documents lên Cloud:', err);
+        });
+        setUploadedFiles(INITIAL_SAMPLE_FILES);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // =========================================================================
+  // 2. BẢO VỆ MẬT KHẨU QUẢN TRỊ VIÊN (ADMIN AUTH)
+  // =========================================================================
+  const handleRequireAdmin = (
+    type: 'file_manager' | 'firebase_modal' | 'api_key_modal',
+    title: string
+  ) => {
+    if (isAdminLoggedIn) {
+      // Nếu đã đăng nhập Admin, mở trực tiếp
+      if (type === 'file_manager') setIsFileManagerOpen(true);
+      if (type === 'firebase_modal') setIsFirebaseModalOpen(true);
+      if (type === 'api_key_modal') setIsApiKeyModalOpen(true);
+    } else {
+      // Chưa đăng nhập Admin -> Hiển thị Modal mật khẩu
+      setPendingAdminAction({ type, title });
+      setIsAdminAuthModalOpen(true);
+    }
+  };
+
+  const handleAdminAuthSuccess = () => {
+    setIsAdminLoggedIn(true);
+    if (pendingAdminAction) {
+      if (pendingAdminAction.type === 'file_manager') setIsFileManagerOpen(true);
+      if (pendingAdminAction.type === 'firebase_modal') setIsFirebaseModalOpen(true);
+      if (pendingAdminAction.type === 'api_key_modal') setIsApiKeyModalOpen(true);
+      setPendingAdminAction(null);
+    }
+  };
+
+  const handleAdminLogout = () => {
+    setAdminSession(false);
+    setIsAdminLoggedIn(false);
+    setIsFileManagerOpen(false);
+    setIsFirebaseModalOpen(false);
+    setIsApiKeyModalOpen(false);
+  };
+
+  // Quản lý API Key người dùng
   const handleSaveUserApiKey = (newKey: string) => {
     const trimmed = newKey.trim();
     setUserApiKey(trimmed);
@@ -101,23 +181,7 @@ export default function App() {
     }
   };
 
-  // Trạng thái kết nối Firebase
-  const [isFirebaseActive, setIsFirebaseActive] = useState(() => {
-    return isRealFirebaseConfig(getActiveFirebaseConfig());
-  });
-
-  const chatBottomRef = useRef<HTMLDivElement>(null);
-
-  // Tự động lưu danh sách file vào localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_FILES_KEY, JSON.stringify(uploadedFiles));
-    } catch (e) {
-      console.error('Lỗi khi lưu danh sách file vào localStorage:', e);
-    }
-  }, [uploadedFiles]);
-
-  // Hợp nhất nội dung các tài liệu thành Dynamic Grounding Context
+  // Hợp nhất nội dung các tài liệu thành Dynamic Grounding Context cho Gemini AI
   const dynamicGroundingContext = useMemo(() => {
     const readyFiles = uploadedFiles.filter(
       (f) => f.status === 'ready' && f.extractedText && f.extractedText.trim().length > 0
@@ -129,7 +193,7 @@ export default function App() {
 
     return readyFiles
       .map((file, index) => {
-        const header = `=== TỆP TÀI LIỆU [${index + 1}/${readyFiles.length}]: "${file.name}" (Định dạng: ${file.type.toUpperCase()}, Dung lượng: ${Math.round(file.size / 1024)} KB, ${file.wordCount} từ) ===`;
+        const header = `=== TỆP TÀI LIỆU [${index + 1}/${readyFiles.length}]: "${file.name}" (Định dạng: ${file.type.toUpperCase()}, Dung lượng: ${Math.round(file.size / 1024)} KB, ${file.wordCount} từ, Người tải: ${file.uploadedBy || 'Admin'}) ===`;
         return `${header}\n${file.extractedText.trim()}`;
       })
       .join('\n\n=======================================================\n\n');
@@ -157,7 +221,7 @@ export default function App() {
         const welcomeMessage: ChatMessage = {
           id: 'welcome_msg',
           sender: 'assistant',
-          message: `Chào bạn! Tôi là **Trợ lý Pháp lý Lao Động** của công ty.\n\nTôi đang đối chiếu và tra cứu trực tiếp từ **${activeFilesCount} tệp tài liệu** được cung cấp:\n${filesNames}\n\nTôi có thể giải đáp chi tiết cho bạn về:\n- 📝 Hợp đồng lao động, thử việc và tiền lương.\n- ⏰ Giờ làm việc, làm việc từ xa (WFH), làm thêm giờ (OT).\n- 🏖️ Chế độ nghỉ phép năm, bảo lưu ngày phép và chế độ ốm đau/thai sản.\n- 🚪 Thủ tục, thời hạn báo trước và trợ cấp khi chấm dứt HĐLĐ.\n- 📁 Bạn cũng có thể nhấn nút **"Quản lý File Luật & Nội quy"** ở góc trên để tải thêm tài liệu công ty (.pdf, .docx, .txt, .md) bất cứ lúc nào!\n\nHãy gửi câu hỏi hoặc chọn các chủ đề gợi ý bên dưới để bắt đầu nhé!`,
+          message: `Chào bạn! Tôi là **Trợ lý Pháp lý Lao Động** của công ty.\n\nTôi đang đối chiếu và tra cứu trực tiếp từ **${activeFilesCount} tệp tài liệu** đã đồng bộ trên hệ thống:\n${filesNames}\n\nTôi có thể giải đáp chi tiết cho bạn về:\n- 📝 Hợp đồng lao động, thử việc và tiền lương.\n- ⏰ Giờ làm việc, làm việc từ xa (WFH), làm thêm giờ (OT).\n- 🏖️ Chế độ nghỉ phép năm, bảo lưu ngày phép và chế độ ốm đau/thai sản.\n- 🚪 Thủ tục, thời hạn báo trước và trợ cấp khi chấm dứt HĐLĐ.\n\nHãy gửi câu hỏi hoặc chọn các chủ đề gợi ý bên dưới để bắt đầu nhé!`,
           timestamp: Date.now(),
           sessionId,
         };
@@ -177,26 +241,49 @@ export default function App() {
     setIsFirebaseActive(isRealFirebaseConfig(getActiveFirebaseConfig()));
   };
 
-  // Thao tác với danh sách file
-  const handleAddFiles = (newFiles: LawDocumentFile[]) => {
-    setUploadedFiles((prev) => {
-      // Tránh trùng lặp tên file hoặc id
-      const existingNames = new Set(prev.map((f) => f.name.toLowerCase()));
-      const filtered = newFiles.filter((f) => !existingNames.has(f.name.toLowerCase()));
-      return [...prev, ...filtered];
-    });
+  // Thao tác với danh sách file trên Cloud Firestore
+  const handleAddFiles = async (newFiles: LawDocumentFile[]) => {
+    setIsCloudSyncing(true);
+    try {
+      await saveBatchDocumentsToFirestore(newFiles);
+    } catch (err) {
+      console.error('Lỗi khi lưu tài liệu lên Cloud Firestore:', err);
+    } finally {
+      setIsCloudSyncing(false);
+    }
   };
 
-  const handleRemoveFile = (fileId: string) => {
-    setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId));
+  const handleRemoveFile = async (fileId: string) => {
+    setIsCloudSyncing(true);
+    try {
+      await deleteDocumentFromFirestore(fileId);
+    } catch (err) {
+      console.error('Lỗi khi xóa tài liệu khỏi Cloud Firestore:', err);
+    } finally {
+      setIsCloudSyncing(false);
+    }
   };
 
-  const handleClearAllFiles = () => {
-    setUploadedFiles([]);
+  const handleClearAllFiles = async () => {
+    setIsCloudSyncing(true);
+    try {
+      await clearAllDocumentsFromFirestore();
+    } catch (err) {
+      console.error('Lỗi khi xóa toàn bộ tài liệu trên Cloud Firestore:', err);
+    } finally {
+      setIsCloudSyncing(false);
+    }
   };
 
-  const handleLoadSampleFiles = () => {
-    setUploadedFiles(INITIAL_SAMPLE_FILES);
+  const handleLoadSampleFiles = async () => {
+    setIsCloudSyncing(true);
+    try {
+      await seedSampleDocumentsToFirestore();
+    } catch (err) {
+      console.error('Lỗi khi nạp dữ liệu mẫu lên Cloud Firestore:', err);
+    } finally {
+      setIsCloudSyncing(false);
+    }
   };
 
   // Tạo hội thoại mới / Xóa lịch sử
@@ -212,7 +299,7 @@ export default function App() {
       sender: 'assistant',
       message: `Đã làm mới phiên tư vấn. Tôi đang sẵn sàng tra cứu dữ liệu từ **${activeFilesCount} tệp tài liệu luật & nội quy** của bạn. Bạn muốn tìm hiểu quy định nào hôm nay?`,
       timestamp: Date.now(),
-      sessionId: newId,
+      sessionId,
     };
     setMessages([initialGreeting]);
     await saveMessage(initialGreeting);
@@ -268,8 +355,7 @@ export default function App() {
 
       let cleanErrorText = error?.message || 'Đã có lỗi xảy ra.';
       if (error?.needsApiKey || cleanErrorText.includes('API_KEY') || cleanErrorText.includes('Chưa cấu hình API Key')) {
-        // Tự động mở Modal cấu hình API Key để hỗ trợ người dùng thuận tiện nhất
-        setIsApiKeyModalOpen(true);
+        handleRequireAdmin('api_key_modal', 'Cấu hình Gemini API Key');
       } else if (cleanErrorText.includes('503') || cleanErrorText.includes('high demand') || cleanErrorText.includes('UNAVAILABLE')) {
         cleanErrorText = 'Máy chủ AI hiện đang trong thời điểm quá tải yêu cầu tạm thời (High demand 503). Hệ thống đã tự động thử lại nhưng chưa thành công. Bạn vui lòng bấm nút "Thử lại" bên dưới sau vài giây.';
       } else if (cleanErrorText.includes('429')) {
@@ -311,23 +397,25 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-full bg-slate-100 overflow-hidden">
-      {/* Header Thanh công cụ với Nút Quản lý File & API Key */}
+      {/* Header Thanh công cụ với Nút Quản lý File, API Key & Khóa Admin */}
       <Header
         onNewChat={() => setIsConfirmClearOpen(true)}
-        onOpenFileManager={() => setIsFileManagerOpen(true)}
-        onOpenFirebase={() => setIsFirebaseModalOpen(true)}
-        onOpenApiKey={() => setIsApiKeyModalOpen(true)}
+        onOpenFileManager={() => handleRequireAdmin('file_manager', 'Quản lý File Luật & Nội quy')}
+        onOpenFirebase={() => handleRequireAdmin('firebase_modal', 'Cơ sở dữ liệu Cloud Firestore')}
+        onOpenApiKey={() => handleRequireAdmin('api_key_modal', 'Cấu hình Gemini API Key')}
         isFirebaseActive={isFirebaseActive}
         hasCustomApiKey={Boolean(userApiKey)}
         messageCount={messages.length}
         fileCount={readyFilesCount}
+        isAdminLoggedIn={isAdminLoggedIn}
+        onAdminLogout={handleAdminLogout}
       />
 
       {/* Vùng Khung Tin Nhắn (Chat Window) */}
       <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 flex flex-col justify-between">
         <div className="max-w-4xl w-full mx-auto space-y-3">
           
-          {/* Thanh hiển thị trạng thái File Tài liệu đang áp dụng */}
+          {/* Thanh hiển thị trạng thái File Tài liệu đang áp dụng (Đồng bộ Cloud) */}
           <div className="bg-white/90 backdrop-blur-xs border border-blue-100 rounded-xl p-2.5 px-3.5 flex items-center justify-between gap-3 text-xs shadow-2xs">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center flex-shrink-0">
@@ -350,11 +438,20 @@ export default function App() {
             <button
               id="banner-manage-files-button"
               type="button"
-              onClick={() => setIsFileManagerOpen(true)}
+              onClick={() => handleRequireAdmin('file_manager', 'Quản lý File Luật & Nội quy')}
               className="flex items-center gap-1 text-blue-700 hover:text-blue-900 font-semibold text-xs hover:underline flex-shrink-0 cursor-pointer"
             >
-              <Upload className="w-3 h-3" />
-              <span>{readyFilesCount > 0 ? 'Thêm / Xem file' : 'Tải file lên'}</span>
+              {isAdminLoggedIn ? (
+                <>
+                  <Upload className="w-3 h-3" />
+                  <span>{readyFilesCount > 0 ? 'Thêm / Xem file' : 'Tải file lên'}</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3 h-3 text-slate-400" />
+                  <span>Quản lý File</span>
+                </>
+              )}
             </button>
           </div>
 
@@ -364,7 +461,7 @@ export default function App() {
               key={msg.id}
               message={msg}
               onRetry={msg.isError ? () => handleRetryMessage(index) : undefined}
-              onOpenApiKey={() => setIsApiKeyModalOpen(true)}
+              onOpenApiKey={() => handleRequireAdmin('api_key_modal', 'Cấu hình Gemini API Key')}
             />
           ))}
 
@@ -388,7 +485,7 @@ export default function App() {
         setInput={setInput}
         onSend={() => handleSendMessage()}
         isLoading={isLoading}
-        onOpenFileUpload={() => setIsFileManagerOpen(true)}
+        onOpenFileUpload={() => handleRequireAdmin('file_manager', 'Quản lý File Luật & Nội quy')}
       />
 
       {/* Modal Quản lý và Tải file Tài liệu Luật & Nội quy (.pdf, .docx, .txt, .md) */}
@@ -400,6 +497,7 @@ export default function App() {
         onRemoveFile={handleRemoveFile}
         onClearAllFiles={handleClearAllFiles}
         onLoadSampleFiles={handleLoadSampleFiles}
+        isCloudSyncing={isCloudSyncing}
       />
 
       {/* Modal Cấu hình Firebase Firestore */}
@@ -418,6 +516,17 @@ export default function App() {
         onClearApiKey={handleClearUserApiKey}
       />
 
+      {/* Modal Xác thực Quản trị viên (Admin Lock) */}
+      <AdminAuthModal
+        isOpen={isAdminAuthModalOpen}
+        onClose={() => {
+          setIsAdminAuthModalOpen(false);
+          setPendingAdminAction(null);
+        }}
+        onSuccess={handleAdminAuthSuccess}
+        targetFeatureName={pendingAdminAction?.title || 'Quản trị hệ thống'}
+      />
+
       {/* Modal Xác nhận Tạo hội thoại mới / Xóa lịch sử */}
       {isConfirmClearOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
@@ -429,7 +538,7 @@ export default function App() {
               Tạo cuộc hội thoại mới?
             </h3>
             <p className="text-center text-xs text-slate-500 mb-6 leading-relaxed">
-              Thao tác này sẽ làm mới phiên làm việc hiện tại và bắt đầu một cuộc hội thoại mới với Trợ lý Luật Lao động. Dữ liệu các tệp tài liệu đã tải lên vẫn được bảo lưu.
+              Thao tác này sẽ làm mới phiên làm việc hiện tại và bắt đầu một cuộc hội thoại mới với Trợ lý Luật Lao động. Dữ liệu các tệp tài liệu trên Cloud Firestore vẫn được bảo lưu an toàn.
             </p>
             <div className="flex items-center gap-3">
               <button

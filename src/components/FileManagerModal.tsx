@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  * 
  * MODAL QUẢN LÝ VÀ TẢI FILE TÀI LIỆU LUẬT & NỘI QUY CÔNG TY
- * Cho phép kéo thả / tải lên file .pdf, .docx, .txt, .md
- * Tự động trích xuất nội dung văn bản trực tiếp ở Client-side
+ * Đồng bộ Cloud Firestore toàn hệ thống - Mọi máy tính đều truy cập cùng dữ liệu
  */
 
 import React, { useState, useRef } from 'react';
@@ -19,23 +18,24 @@ import {
   AlertCircle, 
   FileCode, 
   Loader2, 
-  Plus, 
-  BookMarked,
-  Sparkles,
-  Info
+  Sparkles, 
+  Info,
+  Cloud,
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
 import { LawDocumentFile } from '../types';
 import { parseUploadedDocument, formatFileSize } from '../utils/documentParser';
-import { DEFAULT_KNOWLEDGE_BASE } from '../config/knowledgeBase';
 
 interface FileManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   files: LawDocumentFile[];
-  onAddFiles: (newFiles: LawDocumentFile[]) => void;
-  onRemoveFile: (fileId: string) => void;
-  onClearAllFiles: () => void;
-  onLoadSampleFiles: () => void;
+  onAddFiles: (newFiles: LawDocumentFile[]) => Promise<void> | void;
+  onRemoveFile: (fileId: string) => Promise<void> | void;
+  onClearAllFiles: () => Promise<void> | void;
+  onLoadSampleFiles: () => Promise<void> | void;
+  isCloudSyncing?: boolean;
 }
 
 export const FileManagerModal: React.FC<FileManagerModalProps> = ({
@@ -46,12 +46,14 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
   onRemoveFile,
   onClearAllFiles,
   onLoadSampleFiles,
+  isCloudSyncing = false,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isActionLoading, setIsActionLoading] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -90,7 +92,7 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
     await processFileList(Array.from(droppedFiles));
   };
 
-  // Quá trình trích xuất văn bản từ mảng file
+  // Quá trình trích xuất văn bản từ mảng file và lưu vào Firestore
   const processFileList = async (fileList: File[]) => {
     setIsProcessing(true);
     setUploadError(null);
@@ -101,6 +103,7 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
       setProcessingStatus(`Đang đọc (${i + 1}/${fileList.length}): ${file.name}...`);
       try {
         const parsed = await parseUploadedDocument(file);
+        parsed.uploadedBy = 'Admin';
         parsedResults.push(parsed);
       } catch (err: any) {
         console.error('Lỗi khi phân tích file:', err);
@@ -108,7 +111,12 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
     }
 
     if (parsedResults.length > 0) {
-      onAddFiles(parsedResults);
+      setProcessingStatus('Đang đồng bộ dữ liệu lên Cloud Firestore...');
+      try {
+        await onAddFiles(parsedResults);
+      } catch (err) {
+        console.error('Lỗi khi đồng bộ lên Firestore:', err);
+      }
     } else {
       setUploadError('Không thể trích xuất nội dung từ các file đã chọn. Vui lòng kiểm tra lại định dạng (.pdf, .docx, .txt, .md).');
     }
@@ -153,6 +161,26 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
     }
   };
 
+  const handleLoadSample = async () => {
+    setIsActionLoading(true);
+    try {
+      await onLoadSampleFiles();
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (confirm('Bạn có chắc muốn xóa tất cả tài liệu trên Cloud Firestore không? Mọi máy truy cập sẽ được cập nhật.')) {
+      setIsActionLoading(true);
+      try {
+        await onClearAllFiles();
+      } finally {
+        setIsActionLoading(false);
+      }
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
       <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
@@ -167,12 +195,13 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
                 <h2 className="text-base sm:text-lg font-bold text-slate-900">
                   Quản lý File Luật & Nội quy Công ty
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
-                  {activeFilesCount} file sẵn sàng
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <Cloud className="w-3 h-3 text-emerald-600" />
+                  Đồng bộ Cloud Firestore
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Tải tệp tài liệu để AI tự động trích xuất và đối chiếu chính xác khi trả lời câu hỏi
+                Tài liệu tải lên được lưu trữ trên Firestore và tự động đồng bộ tức thì cho tất cả nhân viên
               </p>
             </div>
           </div>
@@ -214,7 +243,7 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${
                 isDragging ? 'bg-blue-600 text-white shadow-md' : 'bg-blue-100 text-blue-700'
               }`}>
-                {isProcessing ? (
+                {isProcessing || isCloudSyncing ? (
                   <Loader2 className="w-7 h-7 animate-spin" />
                 ) : (
                   <UploadCloud className="w-7 h-7" />
@@ -224,9 +253,9 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
               <div>
                 <p className="text-sm font-semibold text-slate-800">
                   {isProcessing ? (
-                    <span className="text-blue-600">{processingStatus}</span>
+                    <span className="text-blue-600 font-medium">{processingStatus}</span>
                   ) : isDragging ? (
-                    'Thả tệp vào đây để nạp ngay'
+                    'Thả tệp vào đây để nạp ngay lên Cloud'
                   ) : (
                     <>
                       <span className="text-blue-600 hover:underline">Nhấn để tải file lên</span> hoặc kéo thả vào khung này
@@ -234,7 +263,7 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
                   )}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  Hỗ trợ định dạng: <span className="font-medium text-slate-700">.PDF, .DOCX, .TXT, .MD</span> (Trích xuất văn bản trực tiếp)
+                  Hỗ trợ: <span className="font-medium text-slate-700">.PDF, .DOCX, .TXT, .MD</span> (Tự động trích xuất văn bản & lưu trữ Cloud)
                 </p>
               </div>
 
@@ -267,8 +296,9 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
           {/* Thanh công cụ danh sách file */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
             <div className="flex items-center gap-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                Tài liệu đã nạp vào AI ({files.length})
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                <Cloud className="w-3.5 h-3.5 text-blue-600" />
+                Tài liệu Cloud ({files.length})
               </h3>
               {files.length > 0 && (
                 <span className="text-xs text-slate-400">
@@ -282,11 +312,16 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
               <button
                 id="load-sample-law-files-button"
                 type="button"
-                onClick={onLoadSampleFiles}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
-                title="Nạp ngay file mẫu Bộ luật Lao động 2019 & Nội quy công ty để thử nghiệm"
+                onClick={handleLoadSample}
+                disabled={isActionLoading || isProcessing}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                title="Nạp file mẫu Bộ luật Lao động 2019 & Nội quy công ty lên Cloud"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                {isActionLoading ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
                 <span>Nạp file mẫu</span>
               </button>
 
@@ -295,13 +330,10 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
                 <button
                   id="clear-all-files-button"
                   type="button"
-                  onClick={() => {
-                    if (confirm('Bạn có chắc muốn xóa tất cả tài liệu đã tải lên không?')) {
-                      onClearAllFiles();
-                    }
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                  title="Xóa tất cả tài liệu"
+                  onClick={handleClearAll}
+                  disabled={isActionLoading || isProcessing}
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  title="Xóa tất cả tài liệu khỏi Cloud Firestore"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Xóa hết</span>
@@ -313,10 +345,10 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
           {/* Danh sách tệp đã tải lên */}
           {files.length === 0 ? (
             <div className="text-center py-8 px-4 bg-slate-50/60 rounded-2xl border border-slate-200/80">
-              <BookMarked className="w-10 h-10 text-slate-400 mx-auto mb-2 opacity-80" />
-              <p className="text-sm font-medium text-slate-700">Chưa có tệp tài liệu nào được tải lên</p>
+              <Cloud className="w-10 h-10 text-slate-400 mx-auto mb-2 opacity-80" />
+              <p className="text-sm font-medium text-slate-700">Chưa có tệp tài liệu nào trên Cloud Firestore</p>
               <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-                Kéo thả file PDF, DOCX, TXT hoặc bấm nút <strong>"Nạp file mẫu"</strong> ở trên để nạp nhanh Bộ luật Lao động 2019 & Nội quy công ty.
+                Kéo thả file PDF, DOCX, TXT ở trên hoặc bấm nút <strong>"Nạp file mẫu"</strong> để tải dữ liệu mẫu Bộ luật Lao động 2019 & Nội quy công ty lên hệ thống.
               </p>
             </div>
           ) : (
@@ -344,6 +376,10 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
                             <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold uppercase border ${badge.bgColor}`}>
                               {badge.label}
                             </span>
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                              <ShieldCheck className="w-2.5 h-2.5 text-blue-600" />
+                              {file.uploadedBy || 'Admin'}
+                            </span>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-slate-500 mt-0.5">
@@ -352,13 +388,13 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
                             <span>{file.wordCount.toLocaleString()} từ</span>
                             <span>•</span>
                             <span className="hidden sm:inline text-slate-400">
-                              {new Date(file.uploadedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(file.uploadedAt).toLocaleDateString('vi-VN')} {new Date(file.uploadedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                             <span>•</span>
                             {file.status === 'ready' ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
                                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                Đã nạp vào AI
+                                Đã đồng bộ Cloud
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-700">
@@ -389,9 +425,13 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
                         {/* Nút xóa file */}
                         <button
                           type="button"
-                          onClick={() => onRemoveFile(file.id)}
+                          onClick={() => {
+                            if (confirm(`Bạn có chắc muốn xóa file "${file.name}" khỏi Cloud Firestore?`)) {
+                              onRemoveFile(file.id);
+                            }
+                          }}
                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="Xóa tệp này khỏi AI context"
+                          title="Xóa tệp này khỏi Cloud Firestore"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -402,14 +442,14 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
                     {isPreviewing && (
                       <div className="px-4 pb-3.5 pt-2 border-t border-slate-100 bg-slate-50/70 text-xs">
                         <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5 font-medium">
-                          <span>Trích đoạn văn bản AI sẽ đọc:</span>
+                          <span>Trích đoạn văn bản AI đang đối chiếu:</span>
                           <span>{file.characterCount.toLocaleString()} ký tự</span>
                         </div>
                         <div className="max-h-44 overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-lg font-mono text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap select-text">
                           {file.extractedText.slice(0, 2000)}
                           {file.extractedText.length > 2000 && (
                             <span className="text-slate-400 italic">
-                              {'\n'}... [Còn {file.extractedText.length - 2000} ký tự tiếp theo đã được nạp đầy đủ vào AI]
+                              {'\n'}... [Còn {file.extractedText.length - 2000} ký tự tiếp theo đã được đồng bộ đầy đủ lên Cloud]
                             </span>
                           )}
                         </div>
@@ -421,13 +461,13 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
             </div>
           )}
 
-          {/* Ghi chú hướng dẫn cho người dùng */}
-          <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
-            <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          {/* Ghi chú bảo mật & đồng bộ */}
+          <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl flex items-start gap-2.5 text-xs text-blue-950">
+            <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold">Cơ chế tra cứu thông minh (Dynamic Grounding):</p>
-              <p className="text-amber-800/90 mt-0.5 leading-relaxed">
-                Toàn bộ nội dung từ tất cả các file có trạng thái "Đã nạp vào AI" ở trên sẽ được tự động tổng hợp thành bộ ngữ cảnh tra cứu cho Gemini AI. Trợ lý sẽ trích dẫn rõ tên file, điều khoản và thông báo nếu thông tin chưa có trong tài liệu đã nạp.
+              <p className="font-semibold">Lưu trữ tập trung và Đồng bộ tức thì (Real-time Cloud Sync):</p>
+              <p className="text-blue-900/90 mt-0.5 leading-relaxed">
+                Khi Admin tải lên, chỉnh sửa hoặc xóa tài liệu, toàn bộ thay đổi sẽ được cập nhật ngay lập tức lên cơ sở dữ liệu Cloud Firestore. Mọi nhân viên truy cập ứng dụng từ bất kỳ máy tính nào đều sẽ tra cứu chính xác theo dữ liệu mới nhất.
               </p>
             </div>
           </div>
@@ -437,7 +477,7 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
         <div className="px-5 sm:px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
           <span className="text-xs text-slate-500">
             {activeFilesCount > 0
-              ? `Đang áp dụng ${activeFilesCount} tệp cho các câu hỏi tiếp theo`
+              ? `Đang áp dụng ${activeFilesCount} tệp cho toàn bộ câu hỏi của nhân viên`
               : 'Chưa có file nào, AI sẽ sử dụng Bộ luật Lao động 2019 mặc định'}
           </span>
           <button
@@ -445,7 +485,7 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({
             onClick={onClose}
             className="px-4 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl transition-colors cursor-pointer shadow-xs"
           >
-            Hoàn tất
+            Đóng
           </button>
         </div>
       </div>

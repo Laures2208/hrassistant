@@ -19,6 +19,7 @@ export interface FirebaseConfigType {
   storageBucket: string;
   messagingSenderId: string;
   appId: string;
+  firestoreDatabaseId?: string;
 }
 
 export interface SuggestionTopic {
@@ -39,5 +40,6 @@ export interface LawDocumentFile {
   uploadedAt: number;
   status: 'ready' | 'processing' | 'error';
   errorMessage?: string;
+  uploadedBy?: string;
 }
 
