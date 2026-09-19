@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  * 
  * VERCEL SERVERLESS FUNCTION HANDLER CHO /api/chat
- * Cho phép ứng dụng hoạt động mượt mà khi deploy lên Vercel
+ * Hỗ trợ Streaming SSE siêu tốc với Gemini Flash
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -12,21 +12,80 @@ import {
   PRIMARY_MODEL_NAME,
   CANDIDATE_MODELS,
   AI_TEMPERATURE,
+  MAX_OUTPUT_TOKENS,
+  MAX_CONTEXT_CHARACTERS,
   BASE_SYSTEM_INSTRUCTION,
 } from '../src/config/ai';
 
-/**
- * Nén khoảng trắng dư thừa trong văn bản để tối ưu kích thước payload và tốc độ xử lý
- */
-function compressDocumentText(text: string, maxChars: number = 1000000): string {
+function extractKeywords(query: string): string[] {
+  if (!query) return [];
+  const normalized = query.toLowerCase();
+  const stopWords = new Set([
+    'là', 'gì', 'như', 'thế', 'nào', 'sao', 'cho', 'tôi', 'hỏi', 'về', 'của', 'và', 'các', 'những',
+    'được', 'không', 'có', 'thì', 'ở', 'tại', 'với', 'khi', 'nếu', 'đã', 'sẽ', 'đang', 'cho', 'mình',
+    'bạn', 'ơi', 'xin', 'hãy', 'giúp', 'tư', 'vấn', 'em', 'anh', 'chị'
+  ]);
+  return normalized
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"'<>]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 2 && !stopWords.has(w));
+}
+
+function compressAndTrimDocumentText(text: string, query: string, maxChars: number = MAX_CONTEXT_CHARACTERS): string {
   if (!text) return '';
   let cleaned = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
   cleaned = cleaned.replace(/[ \t]{2,}/g, ' ');
-  if (cleaned.length > maxChars) {
-    cleaned = cleaned.substring(0, maxChars) + '\n\n[... Đã tối ưu hóa độ dài tài liệu để bảo đảm phản hồi tức thì ...]';
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+  if (cleaned.length <= maxChars) {
+    return cleaned;
   }
-  return cleaned.trim();
+
+  const keywords = extractKeywords(query);
+  const sections = cleaned.split(/(?=\n\n(?:===|###|Điều\s+\d+|Chương\s+[IVXLCDM\d]+))/i);
+
+  if (sections.length <= 1) {
+    return cleaned.substring(0, maxChars) + '\n\n[... Đã tối ưu hóa độ dài tài liệu để phản hồi tức thì ...]';
+  }
+
+  const scored = sections.map((sec, idx) => {
+    const lower = sec.toLowerCase();
+    let score = (idx === 0 || sec.includes('=== TỆP TÀI LIỆU') || sec.includes('TỔNG QUAN')) ? 40 : 0;
+    for (const kw of keywords) {
+      if (lower.includes(kw)) {
+        score += 15;
+        if (lower.includes('điều') && lower.includes(kw)) score += 20;
+      }
+    }
+    return { sec, score, idx, len: sec.length };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const selected = new Set<number>();
+  let totalLen = 0;
+  for (const item of scored) {
+    if (totalLen + item.len <= maxChars) {
+      selected.add(item.idx);
+      totalLen += item.len;
+    }
+  }
+
+  if (totalLen < maxChars) {
+    for (const item of scored) {
+      if (!selected.has(item.idx) && totalLen + item.len <= maxChars) {
+        selected.add(item.idx);
+        totalLen += item.len;
+      }
+    }
+  }
+
+  const finalSecs = scored.filter((i) => selected.has(i.idx)).map((i) => i.sec);
+  let res = finalSecs.join('\n\n');
+  if (res.length > maxChars) {
+    res = res.substring(0, maxChars);
+  }
+  return res + '\n\n[... Ngữ cảnh đã được tối ưu hóa theo câu hỏi ...]';
 }
 
 export default async function handler(req: any, res: any) {
@@ -56,7 +115,8 @@ export default async function handler(req: any, res: any) {
       dynamicKnowledgeBase, 
       uploadedFilesSummary = [], 
       customKnowledgeBase,
-      apiKey: bodyApiKey
+      apiKey: bodyApiKey,
+      stream = true,
     } = req.body || {};
 
     if (!message || typeof message !== 'string') {
@@ -64,40 +124,34 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // 1. Đọc API Key theo đúng thứ tự ưu tiên:
-    // Ưu tiên 1: API Key do người dùng nhập lưu trong localStorage (truyền qua Header hoặc Body)
     const headerKey = (req.headers['x-gemini-api-key'] as string) || 
       (typeof req.headers.authorization === 'string' ? req.headers.authorization.replace(/^Bearer\s+/i, '').trim() : '');
     const clientProvidedKey = (headerKey || bodyApiKey || '').trim();
-
-    // Ưu tiên 2: Biến môi trường Vercel hoặc Server (GEMINI_API_KEY hoặc VITE_GEMINI_API_KEY)
     const envApiKey = (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '').trim();
     
     const activeApiKey = (clientProvidedKey && clientProvidedKey.length >= 10)
       ? clientProvidedKey
       : (envApiKey && envApiKey !== 'MY_GEMINI_API_KEY' ? envApiKey : clientProvidedKey);
 
-    // Trả về mã 400 rõ ràng (thay vì làm sập function với lỗi 500)
     if (!activeApiKey || activeApiKey === 'MY_GEMINI_API_KEY' || activeApiKey.length < 10) {
       res.status(400).json({
         error: 'CHUA_CAU_HINH_API_KEY',
         needsApiKey: true,
-        message: 'Chưa cấu hình Gemini API Key. Vui lòng bấm nút "⚙️ Cấu hình API Key" trên thanh Header để dán mã API Key của bạn từ Google AI Studio (hoặc cài đặt biến môi trường GEMINI_API_KEY trên Vercel).',
+        message: 'Chưa cấu hình Gemini API Key. Vui lòng bấm "⚙️ Cấu hình API Key" trên thanh Header.',
       });
       return;
     }
 
     const ai = new GoogleGenAI({ apiKey: activeApiKey });
     const rawKnowledge = dynamicKnowledgeBase || customKnowledgeBase || DEFAULT_KNOWLEDGE_BASE;
-    // Nén khoảng trắng văn bản để tránh vượt quá Vercel payload limit
-    const knowledgeDoc = compressDocumentText(rawKnowledge);
+    const knowledgeDoc = compressAndTrimDocumentText(rawKnowledge, message, MAX_CONTEXT_CHARACTERS);
     const hasUploadedFiles = uploadedFilesSummary && uploadedFilesSummary.length > 0;
 
     let filesSummaryHeader = '';
     if (hasUploadedFiles) {
-      filesSummaryHeader = `DANH SÁCH CÁC TỆP TÀI LIỆU ĐANG ĐƯỢC TRA CỨU TRỰC TIẾP (${uploadedFilesSummary.length} tệp):\n` +
+      filesSummaryHeader = `DANH SÁCH CÁC TỆP TÀI LIỆU (${uploadedFilesSummary.length} tệp):\n` +
         uploadedFilesSummary.map((f: any, idx: number) => 
-          `${idx + 1}. [Tệp: ${f.name}] - Định dạng: ${String(f.type || '').toUpperCase()} - Dung lượng: ${Math.round((f.size || 0) / 1024)} KB - Số từ: ${f.wordCount || 0}`
+          `${idx + 1}. [Tệp: ${f.name}] (${Math.round((f.size || 0) / 1024)} KB)`
         ).join('\n') + '\n';
     }
 
@@ -106,13 +160,13 @@ ${BASE_SYSTEM_INSTRUCTION}
 
 ---
 ${filesSummaryHeader}
-DƯỚI ĐÂY LÀ NỘI DUNG TOÀN BỘ CÁC TỆP TÀI LIỆU ĐƯỢC CUNG CẤP (DYNAMIC GROUNDING CONTEXT - ĐÃ NẠP ĐẦY ĐỦ):
+DƯỚI ĐÂY LÀ NỘI DUNG TÀI LIỆU ĐƯỢC CHỌN LỌC TRỌNG TÂM:
 ${knowledgeDoc}
 ---
 `;
 
     const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
-    const recentHistory = history.slice(-8);
+    const recentHistory = history.slice(-6);
     for (const item of recentHistory) {
       if (item.sender === 'user') {
         contents.push({ role: 'user', parts: [{ text: item.message }] });
@@ -122,57 +176,64 @@ ${knowledgeDoc}
     }
     contents.push({ role: 'user', parts: [{ text: message }] });
 
-    let reply = '';
-    let lastError: any = null;
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
 
-    // Duyệt qua danh sách CANDIDATE_MODELS (ưu tiên PRIMARY_MODEL_NAME, tự động Fallback nếu lỗi)
-    for (let i = 0; i < CANDIDATE_MODELS.length; i++) {
-      const modelName = CANDIDATE_MODELS[i];
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents,
-          config: {
-            systemInstruction,
-            temperature: AI_TEMPERATURE,
-          },
-        });
-        if (response && response.text) {
-          reply = response.text;
-          break;
-        }
-      } catch (err: any) {
-        lastError = err;
-        const nextModel = CANDIDATE_MODELS[i + 1];
-        if (nextModel) {
-          console.warn(`[Vercel Serverless] Model '${modelName}' gặp sự cố (${err?.message || err}). Đang tự động chuyển đổi fallback sang '${nextModel}'...`);
-        } else {
-          console.warn(`[Vercel Serverless] Model cuối cùng '${modelName}' gặp lỗi:`, err?.message || err);
+      for (const modelName of CANDIDATE_MODELS) {
+        try {
+          const responseStream = await ai.models.generateContentStream({
+            model: modelName,
+            contents,
+            config: {
+              systemInstruction,
+              temperature: AI_TEMPERATURE,
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
+            },
+          });
+
+          for await (const chunk of responseStream) {
+            const chunkText = chunk.text || '';
+            if (chunkText) {
+              res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+            }
+          }
+
+          res.write(`data: ${JSON.stringify({ done: true, timestamp: Date.now() })}\n\n`);
+          res.end();
+          return;
+        } catch (err: any) {
+          console.warn(`[Vercel Serverless Stream] Model '${modelName}' lỗi:`, err?.message || err);
         }
       }
+      res.write(`data: ${JSON.stringify({ error: 'Lỗi khi tạo luồng phản hồi từ Gemini API.' })}\n\n`);
+      res.end();
+      return;
     }
 
-    if (!reply && lastError) {
-      const errMsg = lastError?.message || String(lastError);
-      if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid')) {
-        res.status(400).json({
-          error: 'API_KEY_INVALID',
-          needsApiKey: true,
-          message: 'Gemini API Key không hợp lệ hoặc đã hết hạn. Vui lòng bấm "⚙️ Cấu hình API Key" trên thanh Header để cập nhật lại key mới từ Google AI Studio.',
-        });
-        return;
-      }
-      throw lastError;
-    }
+    const response = await ai.models.generateContent({
+      model: PRIMARY_MODEL_NAME,
+      contents,
+      config: {
+        systemInstruction,
+        temperature: AI_TEMPERATURE,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+      },
+    });
 
     res.status(200).json({
-      reply: reply || 'Không tìm thấy câu trả lời phù hợp trong tài liệu.',
+      reply: response.text || 'Không có phản hồi.',
       timestamp: Date.now(),
     });
   } catch (error: any) {
     console.error('Lỗi Vercel function /api/chat:', error);
-    res.status(500).json({
-      error: error?.message || 'Đã có lỗi xảy ra khi xử lý câu hỏi.',
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: error?.message || 'Đã có lỗi xảy ra khi xử lý câu hỏi.',
+      });
+    } else {
+      res.end();
+    }
   }
 }

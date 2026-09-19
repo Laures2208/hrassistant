@@ -3,13 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  * 
  * TRỢ LÝ TỰ ĐỘNG TƯ VẤN LUẬT LAO ĐỘNG CÔNG TY
- * Ứng dụng tin nhắn AI tích hợp Google Gemini, Dynamic Cloud Grounding (.pdf, .docx, .txt, .md) & Firebase Firestore
+ * Tối ưu hóa siêu tốc độ phản hồi với Gemini Flash Streaming, Context Trimming & Firebase Firestore
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ChatMessageItem } from './components/ChatMessageItem';
-import { TypingIndicator } from './components/TypingIndicator';
 import { ChatInput } from './components/ChatInput';
 import { TopicSuggestions } from './components/TopicSuggestions';
 import { FileManagerModal } from './components/FileManagerModal';
@@ -35,8 +34,8 @@ import {
   getCachedDocuments
 } from './services/firebaseDocumentService';
 import { getAdminSession, setAdminSession } from './config/adminConfig';
-import { AlertTriangle, FolderOpen, FileText, Sparkles, Upload, Cloud, Lock } from 'lucide-react';
-import { sendLegalChatMessage } from './services/geminiService';
+import { AlertTriangle, FolderOpen, Upload, Lock } from 'lucide-react';
+import { streamLegalChatMessage } from './services/geminiService';
 
 const LOCAL_STORAGE_SESSION_KEY = 'labor_law_current_session_id';
 const LOCAL_STORAGE_USER_API_KEY = 'labor_law_user_gemini_api_key';
@@ -56,7 +55,7 @@ export default function App() {
     return getAdminSession();
   });
 
-  // Quản lý Gemini API Key do người dùng tự nhập (Dành cho Vercel / Independent Deploy)
+  // Quản lý Gemini API Key do người dùng tự nhập
   const [userApiKey, setUserApiKey] = useState<string>(() => {
     try {
       return localStorage.getItem(LOCAL_STORAGE_USER_API_KEY) || '';
@@ -96,6 +95,19 @@ export default function App() {
   });
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const scrollRafId = useRef<number | null>(null);
+
+  // =========================================================================
+  // TỰ ĐỘNG CUỘN MƯỢT (SMOOTH SCROLL) THEO THỜI GIAN THỰC
+  // =========================================================================
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    if (scrollRafId.current) {
+      cancelAnimationFrame(scrollRafId.current);
+    }
+    scrollRafId.current = requestAnimationFrame(() => {
+      chatBottomRef.current?.scrollIntoView({ behavior });
+    });
+  }, []);
 
   // =========================================================================
   // 1. ĐỒNG BỘ DỮ LIỆU TÀI LIỆU TOÀN HỆ THỐNG VỚI CLOUD FIRESTORE
@@ -106,7 +118,6 @@ export default function App() {
       if (docs.length > 0) {
         setUploadedFiles(docs);
       } else if (fromFirestore) {
-        // Nếu trên Cloud hoàn toàn trống, tự động nạp tài liệu mẫu ban đầu
         console.log('[App] Cloud Firestore chưa có tài liệu, tiến hành nạp tài liệu mẫu...');
         seedSampleDocumentsToFirestore().catch((err) => {
           console.warn('[App] Không thể nạp sample documents lên Cloud:', err);
@@ -128,12 +139,10 @@ export default function App() {
     title: string
   ) => {
     if (isAdminLoggedIn) {
-      // Nếu đã đăng nhập Admin, mở trực tiếp
       if (type === 'file_manager') setIsFileManagerOpen(true);
       if (type === 'firebase_modal') setIsFirebaseModalOpen(true);
       if (type === 'api_key_modal') setIsApiKeyModalOpen(true);
     } else {
-      // Chưa đăng nhập Admin -> Hiển thị Modal mật khẩu
       setPendingAdminAction({ type, title });
       setIsAdminAuthModalOpen(true);
     }
@@ -181,7 +190,7 @@ export default function App() {
     }
   };
 
-  // Hợp nhất nội dung các tài liệu thành Dynamic Grounding Context cho Gemini AI
+  // Hợp nhất nội dung các tài liệu thành Grounding Context cho Gemini AI
   const dynamicGroundingContext = useMemo(() => {
     const readyFiles = uploadedFiles.filter(
       (f) => f.status === 'ready' && f.extractedText && f.extractedText.trim().length > 0
@@ -199,11 +208,6 @@ export default function App() {
       .join('\n\n=======================================================\n\n');
   }, [uploadedFiles]);
 
-  // Tự động cuộn xuống cuối khi có tin nhắn mới
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    chatBottomRef.current?.scrollIntoView({ behavior });
-  };
-
   // Tải lại lịch sử tin nhắn khi khởi động hoặc đổi session
   useEffect(() => {
     const fetchHistory = async () => {
@@ -211,7 +215,6 @@ export default function App() {
       if (history.length > 0) {
         setMessages(history);
       } else {
-        // Tin nhắn chào mừng ban đầu từ Chuyên gia Pháp lý
         const activeFilesCount = uploadedFiles.filter((f) => f.status === 'ready').length;
         const filesNames = uploadedFiles
           .filter((f) => f.status === 'ready')
@@ -221,7 +224,7 @@ export default function App() {
         const welcomeMessage: ChatMessage = {
           id: 'welcome_msg',
           sender: 'assistant',
-          message: `Chào bạn! Tôi là **Trợ lý Pháp lý Lao Động** của công ty.\n\nTôi đang đối chiếu và tra cứu trực tiếp từ **${activeFilesCount} tệp tài liệu** đã đồng bộ trên hệ thống:\n${filesNames}\n\nTôi có thể giải đáp chi tiết cho bạn về:\n- 📝 Hợp đồng lao động, thử việc và tiền lương.\n- ⏰ Giờ làm việc, làm việc từ xa (WFH), làm thêm giờ (OT).\n- 🏖️ Chế độ nghỉ phép năm, bảo lưu ngày phép và chế độ ốm đau/thai sản.\n- 🚪 Thủ tục, thời hạn báo trước và trợ cấp khi chấm dứt HĐLĐ.\n\nHãy gửi câu hỏi hoặc chọn các chủ đề gợi ý bên dưới để bắt đầu nhé!`,
+          message: `Chào bạn! Tôi là **Trợ lý Pháp lý Lao Động** của công ty (chế độ phản hồi siêu tốc độ Flash).\n\nTôi đang đối chiếu và tra cứu trực tiếp từ **${activeFilesCount} tệp tài liệu** đã đồng bộ trên hệ thống:\n${filesNames}\n\nTôi có thể giải đáp chi tiết cho bạn về:\n- 📝 Hợp đồng lao động, thử việc và tiền lương.\n- ⏰ Giờ làm việc, làm việc từ xa (WFH), làm thêm giờ (OT).\n- 🏖️ Chế độ nghỉ phép năm, bảo lưu ngày phép và chế độ ốm đau/thai sản.\n- 🚪 Thủ tục, thời hạn báo trước và trợ cấp khi chấm dứt HĐLĐ.\n\nHãy gửi câu hỏi hoặc chọn các chủ đề gợi ý bên dưới để bắt đầu nhé!`,
           timestamp: Date.now(),
           sessionId,
         };
@@ -234,9 +237,8 @@ export default function App() {
 
   useEffect(() => {
     scrollToBottom('smooth');
-  }, [messages, isLoading]);
+  }, [messages.length, scrollToBottom]);
 
-  // Cập nhật trạng thái Firebase khi người dùng lưu config
   const handleFirebaseConfigSaved = () => {
     setIsFirebaseActive(isRealFirebaseConfig(getActiveFirebaseConfig()));
   };
@@ -306,12 +308,14 @@ export default function App() {
     setIsConfirmClearOpen(false);
   };
 
-  // Gửi câu hỏi đến Gemini API
+  // =========================================================================
+  // GỬI CÂU HỎI VỚI STREAMING GÕ CHỮ THỜI GIAN THỰC (FLASH SPEED)
+  // =========================================================================
   const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend !== undefined ? textToSend : input).trim();
     if (!query || isLoading) return;
 
-    // 1. Thêm tin nhắn của User
+    // 1. Tạo tin nhắn của User
     const userMsg: ChatMessage = {
       id: 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
       sender: 'user',
@@ -320,36 +324,62 @@ export default function App() {
       sessionId,
     };
 
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
+    // 2. Tạo sẵn tin nhắn Assistant ở trạng thái Streaming để hiển thị ngay lập tức (0.1 giây)
+    const aiMsgId = 'ai_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
+    const initialAiMsg: ChatMessage = {
+      id: aiMsgId,
+      sender: 'assistant',
+      message: '',
+      timestamp: Date.now(),
+      sessionId,
+      isStreaming: true,
+    };
+
+    const updatedMessagesWithUser = [...messages, userMsg];
+    setMessages([...updatedMessagesWithUser, initialAiMsg]);
     setInput('');
     setIsLoading(true);
 
-    // Lưu tin nhắn User vào Firestore / LocalStorage
+    // Lưu tin nhắn User vào database
     saveMessage(userMsg);
+    scrollToBottom('smooth');
 
     try {
-      // 2. Gửi yêu cầu với cơ chế dự phòng đa tầng (Server -> Client Fallback)
-      const result = await sendLegalChatMessage({
+      // 3. Khởi tạo luồng Streaming phản hồi
+      const result = await streamLegalChatMessage({
         message: query,
-        history: updatedMessages,
+        history: updatedMessagesWithUser,
         dynamicKnowledgeBase: dynamicGroundingContext,
         uploadedFiles,
         sessionId,
         userApiKey: userApiKey.trim() || undefined,
+        onChunk: (accumulatedText) => {
+          // Cập nhật từng từ / từng ký tự ngay lập tức (Typewriter effect)
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === aiMsgId
+                ? { ...msg, message: accumulatedText, isStreaming: true }
+                : msg
+            )
+          );
+          scrollToBottom('smooth');
+        },
       });
 
-      // 3. Thêm tin nhắn phản hồi từ AI
-      const aiMsg: ChatMessage = {
-        id: 'ai_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+      // 4. Khi luồng gõ chữ hoàn thành, đánh dấu isStreaming: false và lưu vào cơ sở dữ liệu
+      const finalAiMsg: ChatMessage = {
+        id: aiMsgId,
         sender: 'assistant',
         message: result.reply,
         timestamp: result.timestamp || Date.now(),
         sessionId,
+        isStreaming: false,
       };
 
-      setMessages((prev) => [...prev, aiMsg]);
-      saveMessage(aiMsg);
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === aiMsgId ? finalAiMsg : msg))
+      );
+      saveMessage(finalAiMsg);
     } catch (error: any) {
       console.error('Lỗi khi trò chuyện với Trợ lý AI:', error);
 
@@ -357,23 +387,28 @@ export default function App() {
       if (error?.needsApiKey || cleanErrorText.includes('API_KEY') || cleanErrorText.includes('Chưa cấu hình API Key')) {
         handleRequireAdmin('api_key_modal', 'Cấu hình Gemini API Key');
       } else if (cleanErrorText.includes('503') || cleanErrorText.includes('high demand') || cleanErrorText.includes('UNAVAILABLE')) {
-        cleanErrorText = 'Máy chủ AI hiện đang trong thời điểm quá tải yêu cầu tạm thời (High demand 503). Hệ thống đã tự động thử lại nhưng chưa thành công. Bạn vui lòng bấm nút "Thử lại" bên dưới sau vài giây.';
-      } else if (cleanErrorText.includes('429')) {
-        cleanErrorText = 'Hệ thống đã đạt giới hạn tần suất yêu cầu tạm thời. Vui lòng đợi khoảng 30 giây rồi bấm "Thử lại".';
+        cleanErrorText = 'Máy chủ AI hiện đang trong thời điểm quá tải yêu cầu tạm thời (503). Bạn vui lòng bấm nút "Thử lại" bên dưới sau vài giây.';
+      } else if (cleanErrorText.includes('429') || cleanErrorText.includes('Quota exceeded') || cleanErrorText.includes('RESOURCE_EXHAUSTED')) {
+        cleanErrorText = 'Hệ thống đã đạt giới hạn tần suất yêu cầu miễn phí (Rate Limit / Quota Exceeded). Bạn vui lòng đợi khoảng 15–20 giây rồi bấm nút **"Thử lại"** bên dưới, hoặc bấm nút **"⚙️ Cấu hình API Key"** để nhập mã API Key riêng từ Google AI Studio mà không bị gián đoạn.';
       }
 
       const errorMsg: ChatMessage = {
-        id: 'err_' + Date.now(),
+        id: aiMsgId,
         sender: 'assistant',
-        message: `⚠️ **Không thể kết nối đến Trợ lý AI:**\n\n${cleanErrorText}\n\n*Nếu vấn đề tiếp tục diễn ra hoặc cần giải quyết chế độ khẩn cấp, vui lòng liên hệ trực tiếp Phòng Nhân sự (HR).*`,
+        message: `⚠️ **Không thể kết nối đến Trợ lý AI:**\n\n${cleanErrorText}\n\n*Nếu vấn đề tiếp tục diễn ra, vui lòng liên hệ trực tiếp Phòng Nhân sự (HR).*`,
         timestamp: Date.now(),
         sessionId,
         isError: true,
+        isStreaming: false,
       };
-      setMessages((prev) => [...prev, errorMsg]);
+
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === aiMsgId ? errorMsg : msg))
+      );
       saveMessage(errorMsg);
     } finally {
       setIsLoading(false);
+      scrollToBottom('smooth');
     }
   };
 
@@ -397,7 +432,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-full bg-slate-100 overflow-hidden">
-      {/* Header Thanh công cụ với Nút Quản lý File, API Key & Khóa Admin */}
+      {/* Header Thanh công cụ */}
       <Header
         onNewChat={() => setIsConfirmClearOpen(true)}
         onOpenFileManager={() => handleRequireAdmin('file_manager', 'Quản lý File Luật & Nội quy')}
@@ -415,7 +450,7 @@ export default function App() {
       <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 flex flex-col justify-between">
         <div className="max-w-4xl w-full mx-auto space-y-3">
           
-          {/* Thanh hiển thị trạng thái File Tài liệu đang áp dụng (Đồng bộ Cloud) */}
+          {/* Thanh hiển thị trạng thái File Tài liệu đang áp dụng */}
           <div className="bg-white/90 backdrop-blur-xs border border-blue-100 rounded-xl p-2.5 px-3.5 flex items-center justify-between gap-3 text-xs shadow-2xs">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center flex-shrink-0">
@@ -455,7 +490,7 @@ export default function App() {
             </button>
           </div>
 
-          {/* Lịch sử tin nhắn */}
+          {/* Lịch sử tin nhắn (Hiển thị mượt mà khi đang Streaming gõ chữ) */}
           {messages.map((msg, index) => (
             <ChatMessageItem
               key={msg.id}
@@ -464,9 +499,6 @@ export default function App() {
               onOpenApiKey={() => handleRequireAdmin('api_key_modal', 'Cấu hình Gemini API Key')}
             />
           ))}
-
-          {/* Hiệu ứng đang soạn thảo / tra cứu: "Đang đọc tài liệu và suy nghĩ..." */}
-          {isLoading && <TypingIndicator />}
 
           {/* Gợi ý câu hỏi khi mới bắt đầu hội thoại */}
           {messages.length <= 2 && !isLoading && (
@@ -488,7 +520,7 @@ export default function App() {
         onOpenFileUpload={() => handleRequireAdmin('file_manager', 'Quản lý File Luật & Nội quy')}
       />
 
-      {/* Modal Quản lý và Tải file Tài liệu Luật & Nội quy (.pdf, .docx, .txt, .md) */}
+      {/* Modal Quản lý và Tải file Tài liệu */}
       <FileManagerModal
         isOpen={isFileManagerOpen}
         onClose={() => setIsFileManagerOpen(false)}
@@ -507,7 +539,7 @@ export default function App() {
         onConfigSaved={handleFirebaseConfigSaved}
       />
 
-      {/* Modal Cấu hình Gemini API Key tùy chỉnh */}
+      {/* Modal Cấu hình Gemini API Key & Đổi mật khẩu Admin */}
       <ApiKeyModal
         isOpen={isApiKeyModalOpen}
         onClose={() => setIsApiKeyModalOpen(false)}
@@ -516,7 +548,7 @@ export default function App() {
         onClearApiKey={handleClearUserApiKey}
       />
 
-      {/* Modal Xác thực Quản trị viên (Admin Lock) */}
+      {/* Modal Xác thực Quản trị viên */}
       <AdminAuthModal
         isOpen={isAdminAuthModalOpen}
         onClose={() => {
@@ -527,7 +559,7 @@ export default function App() {
         targetFeatureName={pendingAdminAction?.title || 'Quản trị hệ thống'}
       />
 
-      {/* Modal Xác nhận Tạo hội thoại mới / Xóa lịch sử */}
+      {/* Modal Xác nhận Tạo hội thoại mới */}
       {isConfirmClearOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-200">

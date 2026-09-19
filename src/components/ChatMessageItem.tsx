@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import Markdown from 'react-markdown';
-import { Scale, User, Copy, Check, AlertCircle, RefreshCw, Key } from 'lucide-react';
+import { Scale, User, Copy, Check, AlertCircle, RefreshCw, Key, Sparkles } from 'lucide-react';
 import { ChatMessage } from '../types';
 
 interface ChatMessageItemProps {
@@ -17,6 +17,7 @@ interface ChatMessageItemProps {
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, onRetry, onOpenApiKey }) => {
   const [copied, setCopied] = useState(false);
   const isUser = message.sender === 'user';
+  const isStreaming = Boolean(message.isStreaming);
 
   const formatTime = (timestamp: number) => {
     try {
@@ -40,12 +41,14 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, onRet
   return (
     <div
       id={`message-${message.id}`}
-      className={`flex w-full gap-3 py-2 px-1 ${isUser ? 'justify-end' : 'justify-start'}`}
+      className={`flex w-full gap-3 py-2 px-1 ${isUser ? 'justify-end' : 'justify-start'} animate-in fade-in duration-150`}
     >
       {/* Avatar AI */}
       {!isUser && (
         <div className="flex-shrink-0 mt-0.5">
-          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xs">
+          <div className={`w-8 h-8 rounded-full text-white flex items-center justify-center shadow-xs transition-colors ${
+            isStreaming ? 'bg-blue-600 animate-pulse' : 'bg-blue-600'
+          }`}>
             <Scale className="w-4 h-4" />
           </div>
         </div>
@@ -63,12 +66,20 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, onRet
       >
         {/* Header thông tin người gửi */}
         <div className="flex items-center justify-between gap-4 mb-1.5 text-xs">
-          <span className={`font-semibold ${isUser ? 'text-slate-200' : message.isError ? 'text-red-700' : 'text-blue-700'}`}>
+          <span className={`font-semibold flex items-center gap-1.5 ${
+            isUser ? 'text-slate-200' : message.isError ? 'text-red-700' : 'text-blue-700'
+          }`}>
             {isUser ? 'Bạn' : 'Chuyên gia Pháp lý Lao động'}
+            {isStreaming && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px] font-normal animate-pulse">
+                <Sparkles className="w-2.5 h-2.5" />
+                Đang gõ...
+              </span>
+            )}
           </span>
           <div className="flex items-center gap-1.5 opacity-70">
             <span>{formatTime(message.timestamp)}</span>
-            {!isUser && !message.isError && (
+            {!isUser && !message.isError && !isStreaming && message.message && (
               <button
                 id={`copy-btn-${message.id}`}
                 onClick={handleCopy}
@@ -120,8 +131,22 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message, onRet
             </div>
           </div>
         ) : (
-          <div className="markdown-content text-sm text-slate-800 leading-relaxed">
-            <Markdown>{message.message}</Markdown>
+          <div className="markdown-content text-sm text-slate-800 leading-relaxed relative">
+            {message.message ? (
+              <>
+                <Markdown>{message.message}</Markdown>
+                {isStreaming && (
+                  <span className="inline-block w-1.5 h-4 ml-1 bg-blue-600 animate-pulse align-middle" />
+                )}
+              </>
+            ) : isStreaming ? (
+              <div className="flex items-center gap-2 text-xs text-slate-500 py-1">
+                <span className="w-2 h-2 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="w-2 h-2 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></span>
+                <span className="ml-1 text-slate-500">Đang đọc tài liệu và soạn câu trả lời...</span>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

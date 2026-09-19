@@ -10,6 +10,7 @@ export interface ChatMessage {
   timestamp: number;
   sessionId: string;
   isError?: boolean;
+  isStreaming?: boolean;
 }
 
 export interface FirebaseConfigType {
@@ -42,4 +43,3 @@ export interface LawDocumentFile {
   errorMessage?: string;
   uploadedBy?: string;
 }
-
