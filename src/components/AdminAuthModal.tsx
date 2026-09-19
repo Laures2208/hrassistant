@@ -155,16 +155,8 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
             </div>
           )}
 
-          {/* Gợi ý cho người quản trị */}
-          <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200 text-[11px] text-slate-500 flex items-center justify-between">
-            <span>💡 Mật khẩu mặc định hệ thống:</span>
-            <code className="font-mono font-bold text-slate-800 bg-slate-200 px-1.5 py-0.5 rounded">
-              123456
-            </code>
-          </div>
-
           {/* Nút hành động */}
-          <div className="flex items-center gap-2.5 pt-1">
+          <div className="flex items-center gap-2.5 pt-2">
             <button
               type="button"
               onClick={onClose}
